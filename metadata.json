@@ -1,0 +1,8 @@
+{
+  "name": "Predictive Opportunity Intelligence Dashboard",
+  "description": "An interactive full-stack dashboard for predicting and identifying real business opportunities from alternative data sources like patents, jobs, regulatory filings, and VC flows, backed by a Gemini AI analysis engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
