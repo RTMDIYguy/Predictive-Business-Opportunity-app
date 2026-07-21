@@ -1,0 +1,25 @@
+---
+title: "U.S. Government API Integration"
+description: "Authentication and configuration guidelines for Federal endpoints"
+---
+
+## Overview of Federal API Requirements
+
+Most U.S. Government data endpoints integrated into this application are **publicly accessible open data endpoints** that require no authentication.
+
+### Endpoint Authentication Matrix
+
+| Federal Data Endpoint | API Key Required? | Notes |
+| :--- | :--- | :--- |
+| **ClinicalTrials.gov** | **No** | Public API v2 (No key required) |
+| **USASpending.gov** | **No** | Public API v2 (No key required) |
+| **arXiv Repository** | **No** | Open OAI-PMH & Search API |
+| **USPTO Patents & PatentsView** | **No** | Public Open Data endpoints |
+| **SEC EDGAR Filings** | **No** | Requires standard `User-Agent` header (`Name/1.0 email@domain.com`) |
+| **openFDA** | **Optional** | Public endpoint works keyless; optional free key unlocks 240 req/min |
+| **SAM.gov Solicitations** | **Optional** | Ingests fallback public signals; optional key unlocks direct SAM.gov API access |
+
+### Getting Optional Keys
+
+- **openFDA**: Visit [open.fda.gov/apis/authentication](https://open.fda.gov/apis/authentication/) to get an instant key via email in 10 seconds.
+- **SAM.gov**: Visit [sam.gov/data-services](https://sam.gov/data-services/) and sign in with Login.gov to generate a SAM API Key under Account Settings.

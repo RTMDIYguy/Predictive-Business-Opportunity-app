@@ -1,0 +1,26 @@
+{
+  "$schema": "https://mintlify.com/mint.json",
+  "name": "Federal Signal Analytics",
+  "colors": {
+    "primary": "#059669",
+    "light": "#10B981",
+    "dark": "#047857"
+  },
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "docs/introduction",
+        "docs/quickstart",
+        "docs/government-apis"
+      ]
+    },
+    {
+      "group": "Core Features",
+      "pages": [
+        "docs/signal-sandbox",
+        "docs/pipeline-architecture"
+      ]
+    }
+  ]
+}

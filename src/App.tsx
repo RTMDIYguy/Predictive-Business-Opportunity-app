@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Dna,
   Cpu,
@@ -22,6 +23,7 @@ import {
   Play,
   ArrowRight,
   ChevronRight,
+  ChevronDown,
   Info,
   Clock,
   Trash2,
@@ -34,7 +36,12 @@ import {
   Database,
   Server,
   Workflow,
-  ListTodo
+  ListTodo,
+  Download,
+  Key,
+  ShieldCheck,
+  Lock,
+  X
 } from "lucide-react";
 import { SECTORS, COST_RESOURCES, TIMELINE_TASKS, INGESTION_RESOURCES } from "./data";
 import { Sector, AlternativeSignal, AnalysisResult, CostResource, TimelineTask } from "./types";
@@ -59,6 +66,52 @@ export default function App() {
   const [newSigSource, setNewSigSource] = useState("");
   const [newSigDesc, setNewSigDesc] = useState("");
 
+  // US Government API Keys & Connection State
+  const [showGovApiModal, setShowGovApiModal] = useState(false);
+  const [govKeys, setGovKeys] = useState<{
+    samGovKey: string;
+    openFdaKey: string;
+    usptoKey: string;
+    secUserAgent: string;
+  }>(() => {
+    try {
+      const saved = localStorage.getItem("gov_api_keys");
+      return saved ? JSON.parse(saved) : { samGovKey: "", openFdaKey: "", usptoKey: "", secUserAgent: "GovAnalytics/1.0 (contact@gov.us)" };
+    } catch {
+      return { samGovKey: "", openFdaKey: "", usptoKey: "", secUserAgent: "GovAnalytics/1.0 (contact@gov.us)" };
+    }
+  });
+
+  const [testingGovKeys, setTestingGovKeys] = useState(false);
+  const [testResults, setTestResults] = useState<Record<string, { status: string; message: string }> | null>(null);
+
+  const saveGovKeys = (newKeys: typeof govKeys) => {
+    setGovKeys(newKeys);
+    localStorage.setItem("gov_api_keys", JSON.stringify(newKeys));
+  };
+
+  const handleTestGovKeys = async () => {
+    setTestingGovKeys(true);
+    setTestResults(null);
+    try {
+      const res = await fetch("/api/gov/test-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(govKeys)
+      });
+      const data = await res.json();
+      if (data.results) {
+        setTestResults(data.results);
+      }
+    } catch (e: any) {
+      alert("Failed to test API connections.");
+    } finally {
+      setTestingGovKeys(false);
+    }
+  };
+
+  const activeKeyCount = Object.values(govKeys).filter((v: string) => v.trim().length > 0 && v !== "GovAnalytics/1.0 (contact@gov.us)").length;
+
   // Gemini AI Analysis State
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
@@ -75,6 +128,46 @@ export default function App() {
   // API Directory Selection
   const [selectedApiIndex, setSelectedApiIndex] = useState(0);
   const [copiedCodeIndex, setCopiedCodeIndex] = useState<number | null>(null);
+
+  // Live Open Data Ingestion state
+  const [fetchingLiveOpenData, setFetchingLiveOpenData] = useState(false);
+  const [liveDataSuccessMsg, setLiveDataSuccessMsg] = useState<string | null>(null);
+
+  // Fetch live public data records (ClinicalTrials.gov, USASpending, SAM.gov, openFDA, arXiv)
+  const handleFetchLiveOpenData = async (customKeywords?: string[]) => {
+    setFetchingLiveOpenData(true);
+    setLiveDataSuccessMsg(null);
+    try {
+      const response = await fetch("/api/ingest/live", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sectorId: selectedSector.id,
+          sectorName: selectedSector.name,
+          keywords: customKeywords || [selectedSector.name.split(" ")[0]],
+          apiKeys: govKeys
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to ingest live public data");
+      }
+
+      const data = await response.json();
+      if (data.signals && data.signals.length > 0) {
+        setActiveSignals(prev => [...data.signals, ...prev]);
+        const authSuffix = data.authenticatedCount > 0 ? ` (${data.authenticatedCount} authenticated via Gov API keys)` : "";
+        setLiveDataSuccessMsg(`Successfully ingested ${data.count} real-time public records${authSuffix}!`);
+        setTimeout(() => setLiveDataSuccessMsg(null), 5000);
+      }
+    } catch (err: any) {
+      console.error("Live Ingestion Error:", err);
+      alert("Could not fetch live open data at this time.");
+    } finally {
+      setFetchingLiveOpenData(false);
+    }
+  };
+
 
   // Initialize sector-specific signals on load or sector change
   useEffect(() => {
@@ -304,6 +397,69 @@ export default function App() {
     setTimeout(() => setCopiedCodeIndex(null), 2500);
   };
 
+  // Download entire Gemini AI analysis as structured JSON
+  const downloadJSON = () => {
+    if (!analysisResult) return;
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(analysisResult, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `predictive-opportunity-report-${selectedSector.id}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  // Download a beautiful plaintext formatted summary report of the analysis
+  const downloadSummaryTXT = () => {
+    if (!analysisResult) return;
+    const activeCheckedSignals = activeSignals.filter(s => s.checked);
+    const content = `===========================================================
+PRE-MARKET OPPORTUNITY INTELLIGENCE REPORT
+===========================================================
+Sector: ${selectedSector.name}
+Date Generated: ${new Date().toLocaleDateString()}
+Opportunity Score: ${analysisResult.opportunityScore}/100
+Estimated Lead Horizon: ${analysisResult.timeHorizon}
+
+-----------------------------------------------------------
+PREDICTED UNANNOUNCED BUSINESS ANNOUNCEMENT:
+-----------------------------------------------------------
+${analysisResult.unannouncedIndicator}
+
+-----------------------------------------------------------
+ANALYTICAL NARRATIVE SYNTHESIS:
+-----------------------------------------------------------
+${analysisResult.synthesis}
+
+-----------------------------------------------------------
+ACTIVE SIGNAL BASELINE:
+-----------------------------------------------------------
+${activeCheckedSignals.map((sig, i) => `${i + 1}. [${sig.type}] ${sig.title}
+   Source: ${sig.source} | Observed: ${sig.date} | Horizon: ${sig.leadTime}`).join('\n\n')}
+
+-----------------------------------------------------------
+PLAYBOOK ACTION STRATEGY:
+-----------------------------------------------------------
+${analysisResult.recommendedActions.map((act, i) => `Phase: ${act.phase}
+Action: ${act.action}
+Rationale: ${act.rationale}`).join('\n\n')}
+
+-----------------------------------------------------------
+CRITICAL VALIDATION RISKS:
+-----------------------------------------------------------
+${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
+
+===========================================================
+`;
+    const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(content);
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `predictive-opportunity-report-${selectedSector.id}.txt`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
   // Math calculated completion %
   const completedTasks = timelineTasks.filter(t => t.status === "Completed").length;
   const inProgressTasks = timelineTasks.filter(t => t.status === "In Progress").length;
@@ -370,44 +526,66 @@ export default function App() {
           </div>
 
           {/* Core Navigation Controls */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200" id="nav_tabs_container">
+          <div className="flex flex-wrap items-center gap-2" id="nav_controls_group">
             <button
-              onClick={() => setActiveTab("sandbox")}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
-                activeTab === "sandbox"
-                  ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-              id="tab_sandbox"
+              onClick={() => setShowGovApiModal(true)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-200 text-xs font-semibold transition-all cursor-pointer relative"
+              id="gov_api_modal_trigger_btn"
+              title="Configure US Government & Federal Open Data API Keys"
             >
-              <Activity className="w-4 h-4" />
-              Signal Sandbox
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>U.S. Gov APIs</span>
+              {activeKeyCount > 0 ? (
+                <span className="ml-1 bg-emerald-600 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
+                  {activeKeyCount} Active
+                </span>
+              ) : (
+                <span className="ml-1 text-[10px] text-slate-400 font-normal">
+                  (Setup)
+                </span>
+              )}
             </button>
-            <button
-              onClick={() => setActiveTab("buildplan")}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
-                activeTab === "buildplan"
-                  ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-              id="tab_buildplan"
-            >
-              <ListTodo className="w-4 h-4" />
-              Live Build Plan
-            </button>
-            <button
-              onClick={() => setActiveTab("architecture")}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
-                activeTab === "architecture"
-                  ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-              id="tab_architecture"
-            >
-              <Workflow className="w-4 h-4" />
-              Pipeline Architecture
-            </button>
+
+            <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200" id="nav_tabs_container">
+              <button
+                onClick={() => setActiveTab("sandbox")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  activeTab === "sandbox"
+                    ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                id="tab_sandbox"
+              >
+                <Activity className="w-4 h-4" />
+                Signal Sandbox
+              </button>
+              <button
+                onClick={() => setActiveTab("buildplan")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  activeTab === "buildplan"
+                    ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                id="tab_buildplan"
+              >
+                <ListTodo className="w-4 h-4" />
+                Live Build Plan
+              </button>
+              <button
+                onClick={() => setActiveTab("architecture")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  activeTab === "architecture"
+                    ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                id="tab_architecture"
+              >
+                <Workflow className="w-4 h-4" />
+                Pipeline Architecture
+              </button>
+            </div>
           </div>
+
         </div>
       </header>
 
@@ -502,15 +680,40 @@ export default function App() {
                   </p>
                 </div>
 
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100/80 rounded-lg transition-all"
-                  id="add_custom_signal_btn"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Custom Signal
-                </button>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    onClick={() => handleFetchLiveOpenData()}
+                    disabled={fetchingLiveOpenData}
+                    className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+                    id="fetch_live_open_data_btn"
+                    title="Query ClinicalTrials.gov, USASpending.gov, and arXiv APIs for live open signals"
+                  >
+                    <Database className={`w-4 h-4 ${fetchingLiveOpenData ? 'animate-spin text-emerald-600' : 'text-emerald-600'}`} />
+                    <span>{fetchingLiveOpenData ? "Ingesting Live APIs..." : "Fetch Live Open Data"}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setShowAddModal(true)}
+                    className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100/80 rounded-lg transition-all cursor-pointer"
+                    id="add_custom_signal_btn"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Custom Signal
+                  </button>
+                </div>
               </div>
+
+              {liveDataSuccessMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-medium flex items-center justify-between animate-fadeIn shadow-2xs" id="live_data_toast">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{liveDataSuccessMsg}</span>
+                  </div>
+                  <button onClick={() => setLiveDataSuccessMsg(null)} className="text-emerald-600 hover:text-emerald-900 font-bold px-1">
+                    ✕
+                  </button>
+                </div>
+              )}
 
               {/* TWO PANEL WORKSPACE: Active Signals & Timeline Chronology */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6" id="signals_sandbox_panels">
@@ -528,63 +731,80 @@ export default function App() {
                       </div>
                     ) : (
                       <div className="flex flex-col gap-3" id="active_signals_items">
-                        {activeSignals.map((sig) => (
-                          <div
-                            key={sig.id}
-                            className={`p-3.5 rounded-xl border transition-all flex items-start gap-3 relative ${
-                              sig.checked
-                                ? "bg-white border-indigo-200 shadow-2xs"
-                                : "bg-slate-50/70 border-slate-100 opacity-60"
-                            }`}
-                            id={`signal_item_${sig.id}`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={!!sig.checked}
-                              onChange={() => toggleSignalCheck(sig.id)}
-                              className="mt-1 h-4 w-4 rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                              id={`checkbox_${sig.id}`}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className={`px-2 py-0.5 text-[10px] font-bold tracking-wide rounded-md border ${getSignalTagClass(sig.type)}`}>
-                                  {sig.type}
-                                </span>
-                                <span className="text-[10px] font-semibold text-slate-400">
-                                  {sig.source}
-                                </span>
-                              </div>
-                              <h4 className="text-xs font-bold text-slate-800 mt-1.5 leading-snug">
-                                {sig.title}
-                              </h4>
-                              <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
-                                {sig.description}
-                              </p>
-                              <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-400">
-                                <span className="flex items-center gap-1 font-medium text-slate-500">
-                                  <Clock className="w-3 h-3" />
-                                  Lead Horizon: {sig.leadTime}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <Calendar className="w-3 h-3" />
-                                  Observed: {sig.date}
-                                </span>
-                                <span className="font-semibold text-slate-500">
-                                  Strength: {sig.strength}
-                                </span>
-                              </div>
-                            </div>
-
-                            <button
-                              onClick={() => deleteSignal(sig.id)}
-                              className="text-slate-300 hover:text-rose-500 p-1 rounded-md transition-colors self-start"
-                              title="Delete signal"
-                              id={`delete_sig_${sig.id}`}
+                        <AnimatePresence mode="popLayout">
+                          {activeSignals.map((sig) => (
+                            <motion.div
+                              key={sig.id}
+                              layout
+                              initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                              animate={{
+                                opacity: sig.checked ? 1 : 0.65,
+                                scale: sig.checked ? [1, 1.02, 1] : 1,
+                                y: 0
+                              }}
+                              exit={{
+                                opacity: 0,
+                                scale: 0.92,
+                                x: -20,
+                                transition: { duration: 0.22, ease: "easeInOut" }
+                              }}
+                              whileTap={{ scale: 0.985 }}
+                              transition={{ duration: 0.2, ease: "easeOut" }}
+                              className={`p-3.5 rounded-xl border transition-all flex items-start gap-3 relative ${
+                                sig.checked
+                                  ? "bg-white border-indigo-200 shadow-2xs"
+                                  : "bg-slate-50/70 border-slate-100"
+                              }`}
+                              id={`signal_item_${sig.id}`}
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
+                              <input
+                                type="checkbox"
+                                checked={!!sig.checked}
+                                onChange={() => toggleSignalCheck(sig.id)}
+                                className="mt-1 h-4 w-4 rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                id={`checkbox_${sig.id}`}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`px-2 py-0.5 text-[10px] font-bold tracking-wide rounded-md border ${getSignalTagClass(sig.type)}`}>
+                                    {sig.type}
+                                  </span>
+                                  <span className="text-[10px] font-semibold text-slate-400">
+                                    {sig.source}
+                                  </span>
+                                </div>
+                                <h4 className="text-xs font-bold text-slate-800 mt-1.5 leading-snug">
+                                  {sig.title}
+                                </h4>
+                                <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
+                                  {sig.description}
+                                </p>
+                                <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-400">
+                                  <span className="flex items-center gap-1 font-medium text-slate-500">
+                                    <Clock className="w-3 h-3" />
+                                    Lead Horizon: {sig.leadTime}
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    Observed: {sig.date}
+                                  </span>
+                                  <span className="font-semibold text-slate-500">
+                                    Strength: {sig.strength}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <button
+                                onClick={() => deleteSignal(sig.id)}
+                                className="text-slate-300 hover:text-rose-500 p-1 rounded-md transition-colors self-start cursor-pointer"
+                                title="Delete signal"
+                                id={`delete_sig_${sig.id}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
                       </div>
                     )}
                   </div>
@@ -717,12 +937,35 @@ export default function App() {
                         Pre-Market Opportunity Assessment Report
                       </h3>
                     </div>
-                    <div className="flex items-center gap-2.5" id="report_meta_metrics">
+                    <div className="flex flex-wrap items-center gap-3.5" id="report_meta_metrics">
                       <div className="text-right">
                         <span className="text-[10px] text-slate-400 block font-medium">Estimated Horizon</span>
                         <span className="text-xs font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded-md">
                           {analysisResult.timeHorizon}
                         </span>
+                      </div>
+                      
+                      <div className="hidden sm:block h-8 w-px bg-slate-200" />
+                      
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={downloadSummaryTXT}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                          title="Download Report as Text Summary"
+                          id="btn_download_txt"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Summary (TXT)</span>
+                        </button>
+                        <button
+                          onClick={downloadJSON}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100/80 border border-indigo-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                          title="Download Full JSON Data"
+                          id="btn_download_json"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Data (JSON)</span>
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1043,18 +1286,38 @@ export default function App() {
                     {INGESTION_RESOURCES[selectedApiIndex].description}
                   </p>
 
-                  {/* Copyable Python script */}
+                  {/* Copyable Python script & Live Execution button */}
                   <div className="mt-3 relative" id="code_snippet_box">
                     <pre className="bg-slate-900 text-slate-200 p-4 rounded-xl text-[11px] overflow-x-auto leading-relaxed max-h-56">
                       <code>{INGESTION_RESOURCES[selectedApiIndex].pythonCode}</code>
                     </pre>
-                    <button
-                      onClick={() => handleCopyCode(INGESTION_RESOURCES[selectedApiIndex].pythonCode, selectedApiIndex)}
-                      className="absolute top-2.5 right-2.5 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-slate-300 rounded border border-slate-700"
-                      id="copy_code_btn"
-                    >
-                      {copiedCodeIndex === selectedApiIndex ? "Copied!" : "Copy Script"}
-                    </button>
+                    <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          const name = INGESTION_RESOURCES[selectedApiIndex].name.toLowerCase();
+                          let kw = "nanotechnology";
+                          if (name.includes("patent") || name.includes("uspto")) kw = "semiconductor";
+                          if (name.includes("clinical") || name.includes("fda")) kw = "biotech";
+                          if (name.includes("contract") || name.includes("usa")) kw = "energy";
+                          handleFetchLiveOpenData([kw]);
+                          setActiveTab("sandbox");
+                        }}
+                        disabled={fetchingLiveOpenData}
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded shadow-xs flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                        id="run_live_ingestion_btn"
+                        title="Execute real server-side API request & load live signals into Sandbox"
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                        <span>{fetchingLiveOpenData ? "Ingesting..." : "Run Live API Request"}</span>
+                      </button>
+                      <button
+                        onClick={() => handleCopyCode(INGESTION_RESOURCES[selectedApiIndex].pythonCode, selectedApiIndex)}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-slate-300 rounded border border-slate-700 cursor-pointer"
+                        id="copy_code_btn"
+                      >
+                        {copiedCodeIndex === selectedApiIndex ? "Copied!" : "Copy Script"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1341,6 +1604,212 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* U.S. GOVERNMENT API CONNECTOR & CREDENTIAL MANAGER MODAL */}
+      {showGovApiModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fadeIn" id="gov_api_modal">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 overflow-hidden relative">
+            <button
+              onClick={() => setShowGovApiModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl">
+                <ShieldCheck className="w-6 h-6 text-emerald-700" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">U.S. Government API Connector</h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  Employ your official Federal Developer credentials for live signal ingestion
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 mb-5 text-xs text-slate-600 leading-relaxed">
+              <div className="flex items-start gap-2">
+                <Info className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-slate-800 block mb-0.5">Note: API Keys are Optional!</strong>
+                  The app already ingests live data out-of-the-box from public federal endpoints (ClinicalTrials.gov, USASpending.gov, arXiv). Adding your government API keys unlocks official SAM.gov procurement contracts, higher openFDA rate limits, and USPTO patent searches.
+                </div>
+              </div>
+            </div>
+
+            {/* Step by Step Guide Accordion */}
+            <details className="mb-5 bg-emerald-50/50 border border-emerald-200 rounded-xl overflow-hidden group">
+              <summary className="px-4 py-2.5 text-xs font-bold text-emerald-900 cursor-pointer flex items-center justify-between hover:bg-emerald-100/50 transition-colors">
+                <span className="flex items-center gap-1.5">
+                  <HelpCircle className="w-4 h-4 text-emerald-600" />
+                  Step-by-Step Guide: How to Get Each API Key
+                </span>
+                <ChevronDown className="w-4 h-4 text-emerald-600 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="p-4 pt-2 text-xs text-slate-700 space-y-3 border-t border-emerald-100 bg-white">
+                <div className="border-b border-slate-100 pb-2.5">
+                  <span className="font-bold text-slate-900 block mb-1 text-emerald-800">1. openFDA Key (Fastest - 10 Seconds):</span>
+                  <ol className="list-decimal list-inside space-y-0.5 text-slate-600 pl-1">
+                    <li>Visit <a href="https://open.fda.gov/apis/authentication/" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">open.fda.gov/apis/authentication</a></li>
+                    <li>Enter your Name and Email address.</li>
+                    <li>Click <strong>Submit</strong> — your key will immediately appear on screen and be emailed to you!</li>
+                  </ol>
+                </div>
+
+                <div className="border-b border-slate-100 pb-2.5">
+                  <span className="font-bold text-slate-900 block mb-1 text-emerald-800">2. SAM.gov Federal Contract Key:</span>
+                  <ol className="list-decimal list-inside space-y-0.5 text-slate-600 pl-1">
+                    <li>Visit <a href="https://sam.gov/data-services/" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">sam.gov/data-services</a> or <a href="https://open.gsa.gov/api/get-opportunities-public-api/" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">open.gsa.gov/api/get-opportunities-public-api</a></li>
+                    <li>Sign in to <strong>SAM.gov</strong> with your <strong>Login.gov</strong> account.</li>
+                    <li>Go to your <strong>Profile / Account Settings</strong>, scroll to <strong>API Key</strong>, and click <strong>Generate API Key</strong>.</li>
+                  </ol>
+                </div>
+
+                <div className="border-b border-slate-100 pb-2.5">
+                  <span className="font-bold text-slate-900 block mb-1 text-emerald-800">3. USPTO Patents & PatentsView (No Key Required):</span>
+                  <p className="text-slate-600 leading-relaxed">
+                    <strong>Note:</strong> Your standard MyUSPTO / Patent Center workspace is designed for filing patents/trademarks, not issuing API keys. USPTO Patent Open Data and PatentsView API are <strong>public open data APIs</strong> that work out-of-the-box in this app without needing any key! (You can leave this key field blank).
+                  </p>
+                </div>
+
+                <div>
+                  <span className="font-bold text-slate-900 block mb-1 text-emerald-800">4. SEC EDGAR User-Agent (No Key Needed):</span>
+                  <p className="text-slate-600">
+                    The SEC requires a custom header identifying your organization. Simply type your agency or app name and contact email in the field below (e.g. <code className="bg-slate-100 px-1 rounded font-mono">GovAnalytics/1.0 (analyst@agency.gov)</code>).
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-emerald-600" />
+                    SAM.gov Contract Opportunities API Key
+                  </label>
+                  <a
+                    href="https://sam.gov/data-services/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] text-indigo-600 hover:underline flex items-center gap-0.5 font-semibold"
+                  >
+                    Get Key <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+                <input
+                  type="password"
+                  placeholder="e.g., sam_prod_key_xxxxxxxx"
+                  value={govKeys.samGovKey}
+                  onChange={(e) => saveGovKeys({ ...govKeys, samGovKey: e.target.value })}
+                  className="w-full rounded-lg border border-slate-200 p-2 text-xs font-mono focus:border-emerald-500 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-indigo-600" />
+                    openFDA Drug & Device API Key
+                  </label>
+                  <a
+                    href="https://open.fda.gov/apis/authentication/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] text-indigo-600 hover:underline flex items-center gap-0.5 font-semibold"
+                  >
+                    Get Key <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+                <input
+                  type="password"
+                  placeholder="e.g., fda_key_xxxxxxxx"
+                  value={govKeys.openFdaKey}
+                  onChange={(e) => saveGovKeys({ ...govKeys, openFdaKey: e.target.value })}
+                  className="w-full rounded-lg border border-slate-200 p-2 text-xs font-mono focus:border-indigo-500 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-amber-600" />
+                    USPTO Open Data / PatentsView (Optional)
+                  </label>
+                  <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                    Key Not Required
+                  </span>
+                </div>
+                <input
+                  type="password"
+                  placeholder="Optional enterprise key or leave blank for public access"
+                  value={govKeys.usptoKey}
+                  onChange={(e) => saveGovKeys({ ...govKeys, usptoKey: e.target.value })}
+                  className="w-full rounded-lg border border-slate-200 p-2 text-xs font-mono focus:border-amber-500 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-slate-600" />
+                    SEC EDGAR User-Agent Header
+                  </label>
+                  <span className="text-[10px] text-slate-400">Required format: Agency/Name (email)</span>
+                </div>
+                <input
+                  type="text"
+                  placeholder="e.g., GovAnalytics/1.0 admin@agency.gov"
+                  value={govKeys.secUserAgent}
+                  onChange={(e) => saveGovKeys({ ...govKeys, secUserAgent: e.target.value })}
+                  className="w-full rounded-lg border border-slate-200 p-2 text-xs font-mono focus:border-slate-500 focus:ring-slate-500"
+                />
+              </div>
+            </div>
+
+            {/* LIVE TEST RESULTS BADGES */}
+            {testResults && (
+              <div className="mt-4 p-3 bg-slate-900 rounded-xl text-white text-xs space-y-1.5">
+                <div className="font-bold text-[11px] text-slate-400 uppercase tracking-wider mb-1">Live Connection Verification:</div>
+                {Object.entries(testResults).map(([key, info]: [string, any]) => (
+                  <div key={key} className="flex items-center justify-between">
+                    <span className="font-mono text-slate-300 capitalize">{key}:</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${info?.status === "Valid" || info?.status === "Configured" ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-rose-500/20 text-rose-400 border border-rose-500/30"}`}>
+                      {info?.status} - {info?.message}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-5 mt-5 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={handleTestGovKeys}
+                disabled={testingGovKeys}
+                className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${testingGovKeys ? "animate-spin" : ""}`} />
+                <span>{testingGovKeys ? "Testing APIs..." : "Test Connections"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowGovApiModal(false);
+                  handleFetchLiveOpenData();
+                }}
+                className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Save & Ingest Live Data</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
