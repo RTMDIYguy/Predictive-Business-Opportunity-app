@@ -39,6 +39,12 @@ export interface AnalysisResult {
     rationale: string;
     phase: string;
   }[];
+  // Cross-industry comparative analysis fields
+  comparisonSector?: string;
+  crossIndustryScore?: number;
+  sector1Score?: number;
+  sector2Score?: number;
+  crossIndustrySynergies?: string[];
 }
 
 export interface CostResource {

@@ -305,18 +305,18 @@ export const COST_RESOURCES: CostResource[] = [
 export const TIMELINE_TASKS: TimelineTask[] = [
   {
     id: "t1",
-    task: "API Integration & Data Ingestion (USPTO, SEC EDGAR, clinicaltrials.gov)",
+    task: "API Integration & Federal Data Ingestion (SAM.gov, openFDA, ClinicalTrials.gov, USASpending, arXiv, SEC EDGAR, USPTO)",
     phase: "Phase 1: Ingestion & Pipelines",
     weeks: [1, 2],
-    status: "In Progress",
+    status: "Completed",
     dependencies: []
   },
   {
     id: "t2",
-    task: "Serverless Scrapers & Cloud Scheduler Setup (Reddit, LinkedIn niche roles)",
+    task: "Web Scraping & Alternative Data Ingestion (Serverless scrapers, Reddit, LinkedIn niche roles, News Scrapers)",
     phase: "Phase 1: Ingestion & Pipelines",
     weeks: [2, 3],
-    status: "Planned",
+    status: "In Progress",
     dependencies: ["t1"]
   },
   {
@@ -429,28 +429,65 @@ def search_federal_contracts(recipient_duns="001234567"):
     return []`
   },
   {
-    name: "Job Postings Scraper (Free Python Alternative)",
-    description: "Since premium LinkedIn/Indeed API keys are expensive, use standard search results scraping via free lightweight libraries or BeautifulSoup.",
+    name: "LinkedIn Talent Insights & Post Momentum API",
+    description: "Extract real-time headcount shifts, stealth executive hires, organizational restructuring, and industry thought-leader post sentiment directly via LinkedIn Insights and API proxies.",
+    docsLink: "https://developer.linkedin.com/product-catalog/talent-intelligence",
+    pythonCode: `import requests
+import json
+
+def fetch_linkedin_talent_momentum(company_id="12345", keyword="Quantum Architecture"):
+    # Target LinkedIn Talent & Headcount API proxy endpoint
+    url = f"https://api.linkedin.com/v2/talentAnalytics/headcountGrowth"
+    headers = {
+        "Authorization": "Bearer YOUR_LINKEDIN_OAUTH_TOKEN",
+        "X-Restli-Protocol-Version": "2.0.0"
+    }
+    params = {
+        "q": "companyKeywordSurge",
+        "companyId": company_id,
+        "skillKeyword": keyword,
+        "timeWindow": "90d"
+    }
+    
+    print(f"Polling LinkedIn Talent & Post Sentiment for '{keyword}'...")
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        print("Headcount Spike Detected:", data.get("growthPercentage"), "%")
+        return data
+    else:
+        # Fallback to public post sentiment & headcount scraper proxy
+        proxy_url = "https://linkedin-data-api.p.rapidapi.com/get-company-posts"
+        rapid_headers = {
+            "X-RapidAPI-Key": "YOUR_RAPIDAPI_KEY",
+            "X-RapidAPI-Host": "linkedin-data-api.p.rapidapi.com"
+        }
+        res = requests.get(proxy_url, headers=rapid_headers, params={"username": company_id})
+        return res.json() if res.status_code == 200 else {}`
+  },
+  {
+    name: "Job Postings & LinkedIn Scraper (Free Python Alternative)",
+    description: "Since premium API keys can be restricted, use standard search results scraping via free lightweight libraries to capture LinkedIn, Indeed, and glassdoor hiring velocity.",
     docsLink: "https://github.com/BullsEye-Web-Services-Ltd/jobsprocessor",
     pythonCode: `import requests
 from bs4 import BeautifulSoup
 
-def scrape_indeed_jobs(title="Formulation Scientist", location="San Francisco"):
-    # Target search query for indeed or other job boards
-    query_url = f"https://www.indeed.com/jobs?q={title.replace(' ', '+')}&l={location.replace(' ', '+')}"
+def scrape_job_boards(title="Formulation Scientist", location="San Francisco"):
+    # Target search query for LinkedIn & Indeed job boards
+    query_url = f"https://www.linkedin.com/jobs/search/?keywords={title.replace(' ', '%20')}&location={location.replace(' ', '%20')}"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     r = requests.get(query_url, headers=headers)
     soup = BeautifulSoup(r.text, 'html.parser')
     
-    # Extract titles and companies
-    job_cards = soup.find_all('div', class_='job_seen_beacon')
+    # Extract job card titles and companies
+    job_cards = soup.find_all('div', class_='base-card')
     results = []
     for card in job_cards:
-        title_element = card.find('h2', class_='jobTitle')
-        company_element = card.find('span', class_='companyName')
+        title_element = card.find('h3', class_='base-search-card__title')
+        company_element = card.find('h4', class_='base-search-card__subtitle')
         results.append({
-            "title": title_element.text if title_element else "N/A",
-            "company": company_element.text if company_element else "N/A"
+            "title": title_element.text.strip() if title_element else "N/A",
+            "company": company_element.text.strip() if company_element else "N/A"
         })
     return results`
   }

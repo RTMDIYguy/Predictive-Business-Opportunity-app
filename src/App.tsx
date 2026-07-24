@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { jsPDF } from "jspdf";
 import {
   Dna,
   Cpu,
@@ -41,7 +42,17 @@ import {
   Key,
   ShieldCheck,
   Lock,
-  X
+  X,
+  Globe,
+  Terminal,
+  Rss,
+  MessageSquare,
+  Briefcase,
+  BarChart3,
+  Filter,
+  GitCompare,
+  Users,
+  Building2
 } from "lucide-react";
 import { SECTORS, COST_RESOURCES, TIMELINE_TASKS, INGESTION_RESOURCES } from "./data";
 import { Sector, AlternativeSignal, AnalysisResult, CostResource, TimelineTask } from "./types";
@@ -53,8 +64,15 @@ export default function App() {
   // Sector Selection State
   const [selectedSector, setSelectedSector] = useState<Sector>(SECTORS[0]);
 
+  // Dual-Sector Cross-Industry Comparison State
+  const [enableComparison, setEnableComparison] = useState<boolean>(false);
+  const [comparisonSector, setComparisonSector] = useState<Sector | null>(() => {
+    return SECTORS.find(s => s.id !== SECTORS[0].id) || SECTORS[1] || null;
+  });
+
   // Dynamic Signals State (allows adding/deleting signals in real-time)
   const [activeSignals, setActiveSignals] = useState<AlternativeSignal[]>([]);
+  const [strengthFilter, setStrengthFilter] = useState<string | null>(null);
 
   // Custom Signal Creation Form State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -84,6 +102,7 @@ export default function App() {
 
   const [testingGovKeys, setTestingGovKeys] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, { status: string; message: string }> | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
 
   const saveGovKeys = (newKeys: typeof govKeys) => {
     setGovKeys(newKeys);
@@ -93,6 +112,7 @@ export default function App() {
   const handleTestGovKeys = async () => {
     setTestingGovKeys(true);
     setTestResults(null);
+    setTestError(null);
     try {
       const res = await fetch("/api/gov/test-keys", {
         method: "POST",
@@ -100,17 +120,54 @@ export default function App() {
         body: JSON.stringify(govKeys)
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}: Connection test failed`);
+      }
       if (data.results) {
         setTestResults(data.results);
       }
     } catch (e: any) {
-      alert("Failed to test API connections.");
+      setTestError(e.message || "Failed to test API connections.");
     } finally {
       setTestingGovKeys(false);
     }
   };
 
   const activeKeyCount = Object.values(govKeys).filter((v: string) => v.trim().length > 0 && v !== "GovAnalytics/1.0 (contact@gov.us)").length;
+
+  const getProviderKeyStatus = (providerKey: string) => {
+    if (providerKey === "samGov") {
+      if (govKeys.samGovKey && govKeys.samGovKey.trim().length > 0) {
+        const masked = govKeys.samGovKey.trim().length > 4 ? "••••" + govKeys.samGovKey.trim().slice(-4) : "••••";
+        return { isSet: true, statusText: `Key Set in LocalStorage (${masked})`, badgeClass: "bg-emerald-50 text-emerald-800 border-emerald-200 text-emerald-700" };
+      }
+      return { isSet: false, statusText: "No Key Set (Using Public Fallback)", badgeClass: "bg-amber-50 text-amber-800 border-amber-200" };
+    }
+    if (providerKey === "openFda") {
+      if (govKeys.openFdaKey && govKeys.openFdaKey.trim().length > 0) {
+        const masked = govKeys.openFdaKey.trim().length > 4 ? "••••" + govKeys.openFdaKey.trim().slice(-4) : "••••";
+        return { isSet: true, statusText: `Key Set in LocalStorage (${masked} - 240 req/min)`, badgeClass: "bg-emerald-50 text-emerald-800 border-emerald-200 text-emerald-700" };
+      }
+      return { isSet: false, statusText: "No Key Set (Public Mode - 24 req/min)", badgeClass: "bg-sky-50 text-sky-800 border-sky-200" };
+    }
+    if (providerKey === "uspto") {
+      if (govKeys.usptoKey && govKeys.usptoKey.trim().length > 0) {
+        const masked = govKeys.usptoKey.trim().length > 4 ? "••••" + govKeys.usptoKey.trim().slice(-4) : "••••";
+        return { isSet: true, statusText: `Key Set in LocalStorage (${masked})`, badgeClass: "bg-emerald-50 text-emerald-800 border-emerald-200 text-emerald-700" };
+      }
+      return { isSet: false, statusText: "Keyless Public Endpoint Active", badgeClass: "bg-slate-100 text-slate-700 border-slate-200" };
+    }
+    if (providerKey === "secEdgar") {
+      if (govKeys.secUserAgent && govKeys.secUserAgent.trim().length > 0) {
+        return { isSet: true, statusText: `User-Agent Set in LocalStorage ("${govKeys.secUserAgent.trim().slice(0, 18)}...")`, badgeClass: "bg-emerald-50 text-emerald-800 border-emerald-200 text-emerald-700" };
+      }
+      return { isSet: false, statusText: "Default User-Agent Active", badgeClass: "bg-slate-100 text-slate-700 border-slate-200" };
+    }
+    if (providerKey === "clinicalTrials" || providerKey === "usaSpending" || providerKey === "arxiv") {
+      return { isSet: true, statusText: "Public Open Data (No Key Required)", badgeClass: "bg-indigo-50 text-indigo-800 border-indigo-200" };
+    }
+    return { isSet: false, statusText: "Web Scraper (No Key Required)", badgeClass: "bg-slate-100 text-slate-600 border-slate-200" };
+  };
 
   // Gemini AI Analysis State
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -132,11 +189,117 @@ export default function App() {
   // Live Open Data Ingestion state
   const [fetchingLiveOpenData, setFetchingLiveOpenData] = useState(false);
   const [liveDataSuccessMsg, setLiveDataSuccessMsg] = useState<string | null>(null);
+  const [liveDataErrorMsg, setLiveDataErrorMsg] = useState<string | null>(null);
+
+  // Web Scraping & Alternative Data Engine state
+  const [showScraperConsole, setShowScraperConsole] = useState(false);
+  const [scraperType, setScraperType] = useState<"all" | "reddit" | "news_rss" | "hiring_trends" | "linkedin_hiring">("all");
+  const [scraperKeyword, setScraperKeyword] = useState("");
+  const [scraperCompanyInput, setScraperCompanyInput] = useState("");
+  const [customScrapeUrl, setCustomScrapeUrl] = useState("");
+  const [runningScraper, setRunningScraper] = useState(false);
+  const [crawlingUrl, setCrawlingUrl] = useState(false);
+  const [scraperLogs, setScraperLogs] = useState<string[]>([]);
+  const [scraperSuccessMsg, setScraperSuccessMsg] = useState<string | null>(null);
+  const [scraperErrorMsg, setScraperErrorMsg] = useState<string | null>(null);
+
+  // Run Serverless Scraper Job (LinkedIn Hiring Trends, Reddit, RSS, Talent Spikes)
+  const handleRunScraperJob = async (typeOverride?: "all" | "reddit" | "news_rss" | "hiring_trends" | "linkedin_hiring") => {
+    const targetType = typeOverride || scraperType;
+    setRunningScraper(true);
+    setScraperSuccessMsg(null);
+    setScraperErrorMsg(null);
+    const targetQuery = scraperKeyword.trim() || selectedSector.name.split(" ")[0];
+    const targetComp = scraperCompanyInput.trim();
+
+    setScraperLogs(prev => [...prev, `[INIT] Dispatching scraper task for ${targetType.toUpperCase()} (Sector: "${selectedSector.name}", Company: "${targetComp || 'Sector Pioneers'}")...`]);
+
+    try {
+      // Direct call to dedicated LinkedIn endpoint if type is linkedin_hiring
+      const endpoint = targetType === "linkedin_hiring" ? "/api/scrape/linkedin" : "/api/scrape/run";
+      const payload = targetType === "linkedin_hiring" 
+        ? { sectorName: selectedSector.name, targetCompany: targetComp, keyword: targetQuery }
+        : { scraperType: targetType, keyword: targetQuery, sectorName: selectedSector.name };
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}: Scraper job failed`);
+      }
+
+      if (data.logs) {
+        setScraperLogs(data.logs);
+      }
+
+      if (data.signals && data.signals.length > 0) {
+        setActiveSignals(prev => [...data.signals, ...prev]);
+        const msg = targetType === "linkedin_hiring" 
+          ? `Ingested ${data.count} company-level LinkedIn hiring metrics for ${selectedSector.name}!`
+          : `Successfully scraped & ingested ${data.count} alternative data signals!`;
+        setScraperSuccessMsg(msg);
+        setTimeout(() => setScraperSuccessMsg(null), 6000);
+      }
+    } catch (err: any) {
+      console.error("Scraper Error:", err);
+      setScraperErrorMsg(err.message || "Scraper execution failed");
+    } finally {
+      setRunningScraper(false);
+    }
+  };
+
+  // Crawl & Scrape Custom URL / Press Release
+  const handleScrapeCustomUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customScrapeUrl || !customScrapeUrl.startsWith("http")) {
+      setScraperErrorMsg("Please enter a valid URL starting with http:// or https://");
+      return;
+    }
+
+    setCrawlingUrl(true);
+    setScraperSuccessMsg(null);
+    setScraperErrorMsg(null);
+    setScraperLogs(prev => [...prev, `[INIT] Crawling target URL: ${customScrapeUrl}`]);
+
+    try {
+      const response = await fetch("/api/scrape/url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUrl: customScrapeUrl.trim() })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}: Crawl failed`);
+      }
+
+      if (data.logs) {
+        setScraperLogs(data.logs);
+      }
+
+      if (data.signal) {
+        setActiveSignals(prev => [data.signal, ...prev]);
+        setScraperSuccessMsg(`Successfully extracted signal from ${data.domain || 'target page'}!`);
+        setCustomScrapeUrl("");
+        setTimeout(() => setScraperSuccessMsg(null), 6000);
+      }
+    } catch (err: any) {
+      console.error("URL Scrape Error:", err);
+      setScraperErrorMsg(err.message || "Failed to scrape specified web page.");
+    } finally {
+      setCrawlingUrl(false);
+    }
+  };
 
   // Fetch live public data records (ClinicalTrials.gov, USASpending, SAM.gov, openFDA, arXiv)
   const handleFetchLiveOpenData = async (customKeywords?: string[]) => {
     setFetchingLiveOpenData(true);
     setLiveDataSuccessMsg(null);
+    setLiveDataErrorMsg(null);
     try {
       const response = await fetch("/api/ingest/live", {
         method: "POST",
@@ -149,20 +312,21 @@ export default function App() {
         })
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error("Failed to ingest live public data");
+        throw new Error(data.error || `HTTP ${response.status}: Ingestion failed`);
       }
 
-      const data = await response.json();
       if (data.signals && data.signals.length > 0) {
         setActiveSignals(prev => [...data.signals, ...prev]);
         const authSuffix = data.authenticatedCount > 0 ? ` (${data.authenticatedCount} authenticated via Gov API keys)` : "";
         setLiveDataSuccessMsg(`Successfully ingested ${data.count} real-time public records${authSuffix}!`);
-        setTimeout(() => setLiveDataSuccessMsg(null), 5000);
+        setTimeout(() => setLiveDataSuccessMsg(null), 6000);
       }
     } catch (err: any) {
       console.error("Live Ingestion Error:", err);
-      alert("Could not fetch live open data at this time.");
+      setLiveDataErrorMsg(err.message || "Could not fetch live open data at this time. Please check your connection or API keys.");
     } finally {
       setFetchingLiveOpenData(false);
     }
@@ -179,6 +343,13 @@ export default function App() {
     setActiveSignals(signalsWithCheck);
     setAnalysisResult(null);
     setAnalysisError(null);
+    setStrengthFilter(null);
+
+    // Keep comparisonSector distinct from selectedSector
+    if (comparisonSector && comparisonSector.id === selectedSector.id) {
+      const alt = SECTORS.find(s => s.id !== selectedSector.id) || null;
+      setComparisonSector(alt);
+    }
   }, [selectedSector]);
 
   // Recalculate monthly budget when resources change
@@ -239,13 +410,21 @@ export default function App() {
     setAnalysisResult(null);
 
     // Dynamic step text updates to show rich analytical simulation steps
-    const steps = [
-      "Initializing predictive link pipeline...",
-      "Matching alternative patent clusters to corporate registries...",
-      "Analyzing specialized job posting velocity metrics...",
-      "Evaluating venture capital run rates and funding cues...",
-      "Triggering Gemini AI synthesis engine..."
-    ];
+    const steps = enableComparison && comparisonSector
+      ? [
+          "Initializing dual-sector cross-industry pipeline...",
+          `Correlating ${selectedSector.name} & ${comparisonSector.name} signal clusters...`,
+          "Evaluating cross-sector technology transfer & dual-use vectors...",
+          "Calculating cross-industry opportunity score...",
+          "Triggering Gemini AI multi-sector synthesis engine..."
+        ]
+      : [
+          "Initializing predictive link pipeline...",
+          "Matching alternative patent clusters to corporate registries...",
+          "Analyzing specialized job posting velocity metrics...",
+          "Evaluating venture capital run rates and funding cues...",
+          "Triggering Gemini AI synthesis engine..."
+        ];
 
     let stepIdx = 0;
     setLoadingStepText(steps[0]);
@@ -257,19 +436,32 @@ export default function App() {
     }, 1800);
 
     try {
+      const payload: any = {
+        sector: selectedSector.name,
+        signals: selectedSigs.map(s => ({
+          type: s.type,
+          title: s.title,
+          date: s.date,
+          strength: s.strength,
+          leadTime: s.leadTime
+        }))
+      };
+
+      if (enableComparison && comparisonSector) {
+        payload.comparisonSector = comparisonSector.name;
+        payload.comparisonSignals = comparisonSector.prebakedSignals.map(s => ({
+          type: s.type,
+          title: s.title,
+          date: s.date,
+          strength: s.strength,
+          leadTime: s.leadTime
+        }));
+      }
+
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sector: selectedSector.name,
-          signals: selectedSigs.map(s => ({
-            type: s.type,
-            title: s.title,
-            date: s.date,
-            strength: s.strength,
-            leadTime: s.leadTime
-          }))
-        })
+        body: JSON.stringify(payload)
       });
 
       clearInterval(stepInterval);
@@ -303,28 +495,47 @@ export default function App() {
       const score = Math.min(45 + selectedCount * 12, 98);
       
       const horizon = selectedSector.id === "biotech" ? "18-24 months" : "6-12 months";
-      const pred = selectedSector.id === "biotech" 
+      const pred = enableComparison && comparisonSector
+        ? `Unannounced cross-industry convergence & joint venture (IP licensing / M&A) between ${selectedSector.name} and ${comparisonSector.name}.`
+        : selectedSector.id === "biotech" 
         ? "Targeted oncology clinical pipeline trial announcement (Phase 1/2 initiation) by Major Global Pharma plc."
         : selectedSector.id === "semiconductors"
         ? "Sub-2nm manufacturing partnership & Oregon Cleanroom extension rollout."
         : "Imminent Series B/C scale up or critical corporate acquisition target disclosure.";
 
-      const synth = `Based on the active signal combination, there is strong synergy indicating imminent developments. The combination of early stage patents (${activeSignals.find(s => s.type === 'Patent')?.title || 'Patent filing'}) followed by sudden specialized job postings reveals a high correlation with near-term deployment. This matches patterns of pre-market launches seen at CB Insights and Aura Intelligence with 80%+ historical validation.`;
+      const synth = enableComparison && comparisonSector
+        ? `Cross-industry evaluation of ${selectedSector.name} alongside ${comparisonSector.name} reveals high signal synergy. Patent filings in ${selectedSector.name} match specialized talent recruitment surges in ${comparisonSector.name}, pointing to an imminent dual-use product launch or cross-domain corporate acquisition.`
+        : `Based on the active signal combination, there is strong synergy indicating imminent developments. The combination of early stage patents (${activeSignals.find(s => s.type === 'Patent')?.title || 'Patent filing'}) followed by sudden specialized job postings reveals a high correlation with near-term deployment. This matches patterns of pre-market launches seen at CB Insights and Aura Intelligence with 80%+ historical validation.`;
+
+      const crossScore = enableComparison && comparisonSector ? Math.min(Math.round(score * 1.06), 96) : undefined;
+      const sec1Score = Math.min(score, 94);
+      const sec2Score = enableComparison && comparisonSector ? Math.min(score - 8, 86) : undefined;
+
+      const synergies = enableComparison && comparisonSector ? [
+        `Technology Transfer Vector: Applying ${selectedSector.name} proprietary models/IP directly to ${comparisonSector.name} deployment pipelines.`,
+        `Shared High-Clearance Talent Demand: Overlapping hiring velocity spikes for dual-domain specialists across both sectors.`,
+        `Cross-Domain Corporate Arbitrage: Strategic M&A discussions between leading tier-1 entities in ${selectedSector.name} and ${comparisonSector.name}.`
+      ] : undefined;
 
       const mockRes: AnalysisResult = {
         opportunityScore: score,
         timeHorizon: horizon,
         unannouncedIndicator: pred,
         synthesis: synth,
+        comparisonSector: enableComparison && comparisonSector ? comparisonSector.name : undefined,
+        crossIndustryScore: crossScore,
+        sector1Score: sec1Score,
+        sector2Score: sec2Score,
+        crossIndustrySynergies: synergies,
         criticalRisks: [
           "Patent filing represents research that may fail to achieve commercial validation.",
-          "Hiring spikes could be routine staffing cycles rather than a strategic project pivot.",
+          "Cross-sector export control or regulatory compliance delays.",
           "Alternative datasets contain noise from scraped channels."
         ],
         recommendedActions: [
           {
-            action: "Establish Watchlist Alert",
-            rationale: "Setup automatic scrapers for supplementary FDA clinical trials registries or customs bills of lading matching terms.",
+            action: enableComparison && comparisonSector ? "Establish Cross-Sector Watchlist Alert" : "Establish Watchlist Alert",
+            rationale: enableComparison && comparisonSector ? `Setup scrapers monitoring patent cross-citations between ${selectedSector.name} and ${comparisonSector.name}.` : "Setup automatic scrapers for supplementary FDA clinical trials registries or customs bills of lading matching terms.",
             phase: "Phase 1: Validation"
           },
           {
@@ -416,10 +627,10 @@ export default function App() {
     const content = `===========================================================
 PRE-MARKET OPPORTUNITY INTELLIGENCE REPORT
 ===========================================================
-Sector: ${selectedSector.name}
-Date Generated: ${new Date().toLocaleDateString()}
+Primary Sector: ${selectedSector.name}
+${analysisResult.comparisonSector ? `Secondary Benchmark Sector: ${analysisResult.comparisonSector}\n` : ""}Date Generated: ${new Date().toLocaleDateString()}
 Opportunity Score: ${analysisResult.opportunityScore}/100
-Estimated Lead Horizon: ${analysisResult.timeHorizon}
+${analysisResult.crossIndustryScore !== undefined ? `Cross-Industry Opportunity Score: ${analysisResult.crossIndustryScore}/100\n` : ""}Estimated Lead Horizon: ${analysisResult.timeHorizon}
 
 -----------------------------------------------------------
 PREDICTED UNANNOUNCED BUSINESS ANNOUNCEMENT:
@@ -431,7 +642,12 @@ ANALYTICAL NARRATIVE SYNTHESIS:
 -----------------------------------------------------------
 ${analysisResult.synthesis}
 
+${analysisResult.crossIndustrySynergies && analysisResult.crossIndustrySynergies.length > 0 ? `-----------------------------------------------------------
+CROSS-INDUSTRY CONVERGENCE & SYNERGY VECTORS:
 -----------------------------------------------------------
+${analysisResult.crossIndustrySynergies.map((syn, i) => `${i + 1}. ${syn}`).join('\n\n')}
+
+` : ""}-----------------------------------------------------------
 ACTIVE SIGNAL BASELINE:
 -----------------------------------------------------------
 ${activeCheckedSignals.map((sig, i) => `${i + 1}. [${sig.type}] ${sig.title}
@@ -447,7 +663,7 @@ Rationale: ${act.rationale}`).join('\n\n')}
 -----------------------------------------------------------
 CRITICAL VALIDATION RISKS:
 -----------------------------------------------------------
-${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
+${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
 
 ===========================================================
 `;
@@ -458,6 +674,189 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+  };
+
+  // Download executive intelligence brief as a PDF document using jsPDF
+  const downloadPDF = () => {
+    if (!analysisResult) return;
+    const doc = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
+    const activeCheckedSignals = activeSignals.filter(s => s.checked);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 15;
+    const contentWidth = pageWidth - margin * 2;
+    let y = 15;
+
+    const checkPageBreak = (neededHeight: number) => {
+      if (y + neededHeight > pageHeight - 15) {
+        doc.addPage();
+        y = 20;
+      }
+    };
+
+    // Header Banner
+    doc.setFillColor(30, 27, 75); // Indigo 950
+    doc.rect(0, 0, pageWidth, 28, "F");
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text("PRE-MARKET OPPORTUNITY INTELLIGENCE BRIEFING", margin, 12);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(203, 213, 225); // Slate 300
+    const subText = analysisResult.comparisonSector
+      ? `Primary: ${selectedSector.name}  |  Benchmark: ${analysisResult.comparisonSector}  |  Generated: ${new Date().toLocaleDateString()}`
+      : `Sector: ${selectedSector.name}  |  Generated: ${new Date().toLocaleDateString()}`;
+    doc.text(subText, margin, 20);
+
+    y = 36;
+
+    // Executive Metrics Card
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    const scoreCardHeight = analysisResult.crossIndustryScore !== undefined ? 28 : 22;
+    doc.roundedRect(margin, y, contentWidth, scoreCardHeight, 3, 3, "FD");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Opportunity Score:", margin + 5, y + 9);
+    doc.setFontSize(13);
+    doc.setTextColor(79, 70, 229);
+    doc.text(`${analysisResult.opportunityScore}/100`, margin + 42, y + 9.5);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Time Horizon:", margin + 95, y + 9);
+    doc.setFontSize(10.5);
+    doc.setTextColor(51, 65, 85);
+    doc.text(analysisResult.timeHorizon, margin + 122, y + 9);
+
+    if (analysisResult.crossIndustryScore !== undefined) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.setTextColor(126, 34, 206);
+      doc.text("Cross-Industry Synergy Score:", margin + 5, y + 21);
+      doc.setFontSize(13);
+      doc.text(`${analysisResult.crossIndustryScore}/100`, margin + 65, y + 21.5);
+    }
+
+    y += scoreCardHeight + 8;
+
+    // Section 1: Predicted Announcement
+    checkPageBreak(30);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(30, 27, 75);
+    doc.text("1. Predicted Unannounced Business Announcement", margin, y);
+    y += 5;
+
+    doc.setFillColor(245, 243, 255);
+    doc.setDrawColor(221, 214, 254);
+    const predLines = doc.splitTextToSize(analysisResult.unannouncedIndicator, contentWidth - 10);
+    const predBoxHeight = predLines.length * 5 + 8;
+    doc.roundedRect(margin, y, contentWidth, predBoxHeight, 2, 2, "FD");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(109, 40, 217);
+    doc.text(predLines, margin + 5, y + 6);
+    y += predBoxHeight + 8;
+
+    // Section 2: Analytical Narrative Synthesis
+    checkPageBreak(30);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(30, 27, 75);
+    doc.text("2. Analytical Narrative Synthesis", margin, y);
+    y += 6;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(51, 65, 85);
+    const synthLines = doc.splitTextToSize(analysisResult.synthesis, contentWidth);
+    for (const line of synthLines) {
+      checkPageBreak(6);
+      doc.text(line, margin, y);
+      y += 4.5;
+    }
+    y += 6;
+
+    // Section 3: Cross-Industry Synergies
+    if (analysisResult.crossIndustrySynergies && analysisResult.crossIndustrySynergies.length > 0) {
+      checkPageBreak(35);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(126, 34, 206);
+      doc.text("3. Cross-Industry Convergence & Synergy Vectors", margin, y);
+      y += 6;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 41, 59);
+
+      analysisResult.crossIndustrySynergies.forEach((syn, i) => {
+        const synLines = doc.splitTextToSize(`${i + 1}. ${syn}`, contentWidth - 6);
+        checkPageBreak(synLines.length * 4.5 + 2);
+        doc.text(synLines, margin + 3, y);
+        y += synLines.length * 4.5 + 3;
+      });
+      y += 4;
+    }
+
+    // Section 4: Active Signals Baseline
+    checkPageBreak(35);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(30, 27, 75);
+    doc.text("4. Active Signal Baseline Cluster", margin, y);
+    y += 6;
+
+    activeCheckedSignals.forEach((sig, idx) => {
+      const sigText = `${idx + 1}. [${sig.type}] ${sig.title} (${sig.source} | Observed: ${sig.date})`;
+      const sigLines = doc.splitTextToSize(sigText, contentWidth);
+      checkPageBreak(sigLines.length * 4.5 + 2);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(sigLines, margin, y);
+      y += sigLines.length * 4.5 + 2;
+    });
+    y += 6;
+
+    // Section 5: Recommended Action Strategy
+    checkPageBreak(35);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(30, 27, 75);
+    doc.text("5. Recommended Playbook Strategy", margin, y);
+    y += 6;
+
+    analysisResult.recommendedActions.forEach((act) => {
+      checkPageBreak(16);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(79, 70, 229);
+      doc.text(`• ${act.phase}: ${act.action}`, margin, y);
+      y += 4.5;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105);
+      const ratLines = doc.splitTextToSize(act.rationale, contentWidth - 6);
+      for (const line of ratLines) {
+        checkPageBreak(5);
+        doc.text(line, margin + 4, y);
+        y += 4;
+      }
+      y += 3;
+    });
+
+    // Save document
+    doc.save(`predictive-opportunity-report-${selectedSector.id}.pdf`);
   };
 
   // Math calculated completion %
@@ -631,6 +1030,119 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
                 </div>
               </div>
 
+              {/* Signal Strength Distribution Bar Chart Card */}
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col gap-3.5" id="signal_strength_chart_card">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      <BarChart3 className="w-4 h-4 text-indigo-600" />
+                      <span>Signal Strength Bar Chart</span>
+                    </div>
+                    <h3 className="text-sm font-bold text-slate-900 mt-0.5">
+                      {selectedSector.name} Distribution
+                    </h3>
+                  </div>
+                  <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
+                    {activeSignals.length} Signals
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Breakdown by pipeline confidence. Click any bar to isolate high-value research opportunities in the workspace.
+                </p>
+
+                {/* Interactive Bar Chart */}
+                <div className="flex flex-col gap-2.5 mt-1">
+                  {(["Very High", "High", "Medium", "Low"] as const).map((lvl) => {
+                    const count = activeSignals.filter(s => s.strength === lvl).length;
+                    const pct = activeSignals.length > 0 ? Math.round((count / activeSignals.length) * 100) : 0;
+                    const isFiltered = strengthFilter === lvl;
+
+                    const config = {
+                      "Very High": {
+                        bar: "bg-purple-600",
+                        badge: "bg-purple-50 text-purple-700 border-purple-200",
+                        ring: "ring-2 ring-purple-500/40 bg-purple-50/30 border-purple-300"
+                      },
+                      "High": {
+                        bar: "bg-emerald-500",
+                        badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                        ring: "ring-2 ring-emerald-500/40 bg-emerald-50/30 border-emerald-300"
+                      },
+                      "Medium": {
+                        bar: "bg-amber-500",
+                        badge: "bg-amber-50 text-amber-700 border-amber-200",
+                        ring: "ring-2 ring-amber-500/40 bg-amber-50/30 border-amber-300"
+                      },
+                      "Low": {
+                        bar: "bg-slate-400",
+                        badge: "bg-slate-100 text-slate-600 border-slate-200",
+                        ring: "ring-2 ring-slate-400/40 bg-slate-100/60 border-slate-300"
+                      }
+                    }[lvl];
+
+                    return (
+                      <div
+                        key={lvl}
+                        onClick={() => setStrengthFilter(isFiltered ? null : lvl)}
+                        className={`p-2.5 rounded-lg border transition-all cursor-pointer group hover:border-slate-300 ${
+                          isFiltered ? config.ring : "bg-slate-50/50 border-slate-200/80 hover:bg-slate-50"
+                        }`}
+                        title={`Click to filter signals by ${lvl} strength`}
+                      >
+                        <div className="flex items-center justify-between text-xs mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 text-[10px] font-bold rounded border ${config.badge}`}>
+                              {lvl}
+                            </span>
+                            <span className="font-semibold text-slate-700 group-hover:text-slate-900">
+                              {count} {count === 1 ? 'signal' : 'signals'}
+                            </span>
+                          </div>
+                          <span className="font-mono text-[11px] font-bold text-slate-600">
+                            {pct}%
+                          </span>
+                        </div>
+
+                        <div className="h-2 w-full bg-slate-200/70 rounded-full overflow-hidden flex">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${pct}%` }}
+                            transition={{ duration: 0.4, ease: "easeOut" }}
+                            className={`h-full rounded-full ${config.bar}`}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* High Value Opportunity Summary Callout */}
+                {(() => {
+                  const highValCount = activeSignals.filter(s => s.strength === "Very High" || s.strength === "High").length;
+                  const highValPct = activeSignals.length > 0 ? Math.round((highValCount / activeSignals.length) * 100) : 0;
+
+                  return (
+                    <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between bg-indigo-50/60 -mx-5 -mb-5 p-3.5 rounded-b-xl">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                        <span className="text-[11px] text-slate-700 font-medium">
+                          High-Value Target Density: <strong className="text-indigo-900 font-extrabold">{highValPct}% ({highValCount} signals)</strong>
+                        </span>
+                      </div>
+                      {strengthFilter && (
+                        <button
+                          onClick={() => setStrengthFilter(null)}
+                          className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 bg-white px-2 py-0.5 rounded border border-indigo-200 shadow-2xs cursor-pointer shrink-0"
+                        >
+                          Clear Filter
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
               {/* Research Insights Summary Card */}
               <div className="bg-gradient-to-tr from-slate-900 to-indigo-950 text-white rounded-xl p-5 shadow-sm border border-slate-800" id="insights_guide_card">
                 <div className="flex items-center gap-2 mb-3">
@@ -682,6 +1194,21 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
 
                 <div className="flex flex-wrap items-center gap-2.5">
                   <button
+                    onClick={() => setShowScraperConsole(!showScraperConsole)}
+                    className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer border ${
+                      showScraperConsole
+                        ? "bg-slate-900 text-amber-300 border-slate-800 shadow-xs"
+                        : "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+                    }`}
+                    id="toggle_scraper_console_btn"
+                    title="Launch Web Scraper Bots & On-Demand URL Crawler"
+                  >
+                    <Globe className="w-4 h-4 text-amber-600" />
+                    <span>Web Scraper Console</span>
+                    {showScraperConsole ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                  </button>
+
+                  <button
                     onClick={() => handleFetchLiveOpenData()}
                     disabled={fetchingLiveOpenData}
                     className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
@@ -703,13 +1230,241 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
                 </div>
               </div>
 
+              {/* WEB SCRAPER CONSOLE PANEL */}
+              <AnimatePresence>
+                {showScraperConsole && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.25 }}
+                    className="overflow-hidden"
+                    id="web_scraper_console_panel"
+                  >
+                    <div className="bg-slate-900 text-slate-100 rounded-2xl p-5 border border-slate-800 shadow-xl space-y-5">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              Alternative Data Ingestion
+                            </span>
+                            <span className="text-[11px] text-slate-400 flex items-center gap-1 font-mono">
+                              <Terminal className="w-3 h-3 text-emerald-400" />
+                              Serverless Scrapers Active
+                            </span>
+                          </div>
+                          <h3 className="text-base font-bold text-white mt-1 flex items-center gap-2">
+                            <Globe className="w-4 h-4 text-amber-400" />
+                            Web Scrapers & On-Demand URL Crawler Console
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Scrape Reddit discussions, Google News RSS feeds, specialized hiring spikes, or any public web URL to generate structured weak signals.
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={() => setShowScraperConsole(false)}
+                          className="text-slate-400 hover:text-white p-1 rounded-lg self-start md:self-auto cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* SCRAPER PRESET LAUNCHPAD */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <button
+                          onClick={() => handleRunScraperJob("linkedin_hiring")}
+                          disabled={runningScraper}
+                          className="p-3 bg-gradient-to-br from-blue-900/60 to-indigo-900/60 hover:from-blue-800/80 hover:to-indigo-800/80 border border-blue-500/50 rounded-xl text-left transition-all group cursor-pointer disabled:opacity-50 relative overflow-hidden shadow-xs"
+                          id="btn_run_linkedin_scraper"
+                        >
+                          <div className="flex items-center justify-between text-blue-300 mb-1.5">
+                            <span className="flex items-center gap-1">
+                              <Users className="w-4 h-4 text-sky-400" />
+                              <Building2 className="w-3.5 h-3.5 text-blue-300" />
+                            </span>
+                            <span className="text-[10px] uppercase tracking-wider font-bold text-sky-300 bg-sky-950/80 px-1.5 py-0.5 rounded border border-sky-500/30">LinkedIn API</span>
+                          </div>
+                          <div className="text-xs font-bold text-white group-hover:text-sky-200">LinkedIn Hiring Trends</div>
+                          <div className="text-[10px] text-slate-300 mt-1 leading-tight">Tracks 90d headcount surge, open requisitions & executive hiring velocity for {selectedSector.name}.</div>
+                        </button>
+
+                        <button
+                          onClick={() => handleRunScraperJob("reddit")}
+                          disabled={runningScraper}
+                          className="p-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-700 hover:border-amber-500/50 rounded-xl text-left transition-all group cursor-pointer disabled:opacity-50"
+                        >
+                          <div className="flex items-center justify-between text-amber-400 mb-1.5">
+                            <MessageSquare className="w-4 h-4" />
+                            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 group-hover:text-amber-300">Run Job</span>
+                          </div>
+                          <div className="text-xs font-bold text-white group-hover:text-amber-200">Reddit Community Scraper</div>
+                          <div className="text-[10px] text-slate-400 mt-1 leading-tight">Scrapes r/defense, r/biotech, r/GovernmentContracting discussions.</div>
+                        </button>
+
+                        <button
+                          onClick={() => handleRunScraperJob("news_rss")}
+                          disabled={runningScraper}
+                          className="p-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-700 hover:border-emerald-500/50 rounded-xl text-left transition-all group cursor-pointer disabled:opacity-50"
+                        >
+                          <div className="flex items-center justify-between text-emerald-400 mb-1.5">
+                            <Rss className="w-4 h-4" />
+                            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 group-hover:text-emerald-300">Run Job</span>
+                          </div>
+                          <div className="text-xs font-bold text-white group-hover:text-emerald-200">News & RSS Feed Scraper</div>
+                          <div className="text-[10px] text-slate-400 mt-1 leading-tight">Extracts early R&D & contract announcements from Google News RSS.</div>
+                        </button>
+
+                        <button
+                          onClick={() => handleRunScraperJob("all")}
+                          disabled={runningScraper}
+                          className="p-3 bg-gradient-to-br from-amber-600/30 to-indigo-600/30 hover:from-amber-600/40 hover:to-indigo-600/40 border border-amber-500/40 rounded-xl text-left transition-all group cursor-pointer disabled:opacity-50"
+                        >
+                          <div className="flex items-center justify-between text-amber-300 mb-1.5">
+                            <Sparkles className="w-4 h-4 animate-pulse" />
+                            <span className="text-[10px] uppercase tracking-wider font-bold text-amber-300">Full Job</span>
+                          </div>
+                          <div className="text-xs font-bold text-white">Full Multi-Crawler</div>
+                          <div className="text-[10px] text-slate-300 mt-1 leading-tight">Executes all LinkedIn & web scraper modules concurrently.</div>
+                        </button>
+                      </div>
+
+                      {/* TOPIC & TARGET COMPANY FILTER & ON-DEMAND URL CRAWLER FORM */}
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 pt-2">
+                        {/* Topic & Target Company Filter for Scraper Bots (7 cols) */}
+                        <div className="md:col-span-7 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                              <Filter className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Scraper Topic & Company Entity Filter</span>
+                            </label>
+                            <span className="text-[10px] text-slate-500 font-normal">Active Sector: {selectedSector.name}</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                              <span className="text-[10px] text-slate-400 block mb-1">Target Company / Employer (Optional)</span>
+                              <input
+                                type="text"
+                                value={scraperCompanyInput}
+                                onChange={(e) => setScraperCompanyInput(e.target.value)}
+                                placeholder="e.g. Anduril, Moderna, ASML..."
+                                className="w-full bg-slate-900 border border-slate-700 text-slate-100 text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:border-blue-500 placeholder-slate-600"
+                              />
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 block mb-1">Keyword / Skill Focus</span>
+                              <div className="flex gap-1.5">
+                                <input
+                                  type="text"
+                                  value={scraperKeyword}
+                                  onChange={(e) => setScraperKeyword(e.target.value)}
+                                  placeholder={`e.g. ${selectedSector.name.split(" ")[0]}`}
+                                  className="flex-1 bg-slate-900 border border-slate-700 text-slate-100 text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:border-amber-500 placeholder-slate-600"
+                                />
+                                <button
+                                  onClick={() => handleRunScraperJob("linkedin_hiring")}
+                                  disabled={runningScraper}
+                                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50 shrink-0 shadow-2xs"
+                                  title="Run LinkedIn Hiring Trends Scraper"
+                                >
+                                  <Users className="w-3.5 h-3.5" />
+                                  <span>{runningScraper ? "Scraping..." : "Scrape"}</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Direct URL Scraper Form (5 cols) */}
+                        <form onSubmit={handleScrapeCustomUrl} className="md:col-span-5 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2">
+                          <label className="text-[11px] font-bold text-slate-300 flex items-center justify-between">
+                            <span>On-Demand URL Crawler</span>
+                            <span className="text-[10px] text-slate-500 font-normal">Articles / Releases</span>
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="url"
+                              value={customScrapeUrl}
+                              onChange={(e) => setCustomScrapeUrl(e.target.value)}
+                              placeholder="https://www.defense.gov/News/Releases/..."
+                              className="flex-1 bg-slate-900 border border-slate-700 text-slate-100 text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:border-indigo-500 placeholder-slate-600"
+                            />
+                            <button
+                              type="submit"
+                              disabled={crawlingUrl}
+                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 shadow-2xs"
+                            >
+                              <Search className="w-3.5 h-3.5" />
+                              <span>{crawlingUrl ? "Crawling..." : "Crawl URL"}</span>
+                            </button>
+                          </div>
+                        </form>
+
+
+                      </div>
+
+                      {/* SCRAPER MESSAGES */}
+                      {scraperSuccessMsg && (
+                        <div className="p-3 bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 rounded-xl text-xs font-medium flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                            <span>{scraperSuccessMsg}</span>
+                          </div>
+                          <button onClick={() => setScraperSuccessMsg(null)} className="text-emerald-400 font-bold px-1 cursor-pointer">✕</button>
+                        </div>
+                      )}
+
+                      {scraperErrorMsg && (
+                        <div className="p-3 bg-rose-950/80 border border-rose-500/40 text-rose-200 rounded-xl text-xs font-medium flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span>{scraperErrorMsg}</span>
+                          </div>
+                          <button onClick={() => setScraperErrorMsg(null)} className="text-rose-400 font-bold px-1 cursor-pointer">✕</button>
+                        </div>
+                      )}
+
+                      {/* LIVE SCRAPER TERMINAL LOG OUTPUT */}
+                      {scraperLogs.length > 0 && (
+                        <div className="bg-slate-950 rounded-xl p-3 border border-slate-800 text-[11px] font-mono text-slate-300 space-y-1 max-h-40 overflow-y-auto">
+                          <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1.5 text-slate-500 font-sans text-[10px] uppercase font-bold tracking-wider">
+                            <span className="flex items-center gap-1.5">
+                              <Terminal className="w-3.5 h-3.5 text-amber-400" />
+                              Serverless Scraper Execution Logs
+                            </span>
+                            <button onClick={() => setScraperLogs([])} className="hover:text-slate-300 cursor-pointer">Clear Logs</button>
+                          </div>
+                          {scraperLogs.map((log, i) => (
+                            <div key={i} className={`leading-relaxed ${log.includes("Warning") || log.includes("Error") ? "text-rose-400" : log.includes("[SYSTEM]") ? "text-amber-300 font-semibold" : log.includes("complete") ? "text-emerald-400 font-semibold" : "text-slate-300"}`}>
+                              {log}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {liveDataSuccessMsg && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-medium flex items-center justify-between animate-fadeIn shadow-2xs" id="live_data_toast">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>{liveDataSuccessMsg}</span>
                   </div>
-                  <button onClick={() => setLiveDataSuccessMsg(null)} className="text-emerald-600 hover:text-emerald-900 font-bold px-1">
+                  <button onClick={() => setLiveDataSuccessMsg(null)} className="text-emerald-600 hover:text-emerald-900 font-bold px-1 cursor-pointer">
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {liveDataErrorMsg && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-medium flex items-center justify-between animate-fadeIn shadow-2xs" id="live_data_error_toast">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>{liveDataErrorMsg}</span>
+                  </div>
+                  <button onClick={() => setLiveDataErrorMsg(null)} className="text-rose-600 hover:text-rose-900 font-bold px-1 cursor-pointer">
                     ✕
                   </button>
                 </div>
@@ -721,9 +1476,32 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
                 {/* Active Signals List Configurator (7 cols) */}
                 <div className="md:col-span-7 flex flex-col gap-4" id="active_signals_list_configurator">
                   <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex-1">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                      Signal Selection Panel
-                    </h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        Signal Selection Panel
+                      </h3>
+                      {strengthFilter && (
+                        <button
+                          onClick={() => setStrengthFilter(null)}
+                          className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200"
+                        >
+                          <Filter className="w-3 h-3" />
+                          <span>Filter: <strong>{strengthFilter}</strong> (Reset)</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {strengthFilter && (
+                      <div className="p-2 mb-3 bg-indigo-50/70 border border-indigo-200 text-indigo-950 rounded-lg text-xs font-medium flex items-center justify-between shadow-2xs">
+                        <div className="flex items-center gap-1.5">
+                          <Filter className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                          <span>Filtered by <strong>{strengthFilter}</strong> signal strength ({activeSignals.filter(s => s.strength === strengthFilter).length} of {activeSignals.length} shown)</span>
+                        </div>
+                        <button onClick={() => setStrengthFilter(null)} className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 underline cursor-pointer shrink-0">
+                          Clear Filter
+                        </button>
+                      </div>
+                    )}
 
                     {activeSignals.length === 0 ? (
                       <div className="py-12 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl">
@@ -732,7 +1510,7 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
                     ) : (
                       <div className="flex flex-col gap-3" id="active_signals_items">
                         <AnimatePresence mode="popLayout">
-                          {activeSignals.map((sig) => (
+                          {(strengthFilter ? activeSignals.filter(s => s.strength === strengthFilter) : activeSignals).map((sig) => (
                             <motion.div
                               key={sig.id}
                               layout
@@ -847,22 +1625,91 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
                       )}
                     </div>
 
-                    <div className="mt-6 pt-4 border-t border-slate-100" id="trigger_analysis_block">
-                      <div className="text-[11px] text-slate-400 leading-relaxed mb-3">
-                        Analyzing <strong>{activeSignals.filter(s => s.checked).length}</strong> checked signals will activate the server-side analysis pipeline.
+                    <div className="mt-6 pt-4 border-t border-slate-100 flex flex-col gap-3" id="trigger_analysis_block">
+                      
+                      {/* Cross-Industry Dual Sector Selector Box */}
+                      <div className="p-3 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col gap-2.5" id="dual_sector_configurator">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                            <GitCompare className="w-4 h-4 text-purple-600" />
+                            <span>Dual-Sector Benchmark</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEnableComparison(!enableComparison)}
+                            className={`px-2 py-0.5 text-[10px] font-bold rounded-md border transition-all cursor-pointer ${
+                              enableComparison
+                                ? "bg-purple-600 text-white border-purple-600 shadow-2xs"
+                                : "bg-white text-slate-600 border-slate-300 hover:bg-slate-100"
+                            }`}
+                            id="toggle_dual_sector_btn"
+                          >
+                            {enableComparison ? "Comparing 2 Sectors" : "+ Compare 2 Sectors"}
+                          </button>
+                        </div>
+
+                        {enableComparison && (
+                          <div className="flex flex-col gap-2 mt-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                              Select Secondary Sector to Benchmark
+                            </label>
+                            <select
+                              value={comparisonSector?.id || ""}
+                              onChange={(e) => {
+                                const found = SECTORS.find(s => s.id === e.target.value);
+                                if (found) setComparisonSector(found);
+                              }}
+                              className="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                              id="comparison_sector_select"
+                            >
+                              {SECTORS.filter(s => s.id !== selectedSector.id).map(sec => (
+                                <option key={sec.id} value={sec.id}>
+                                  {sec.name} ({sec.prebakedSignals.length} signals)
+                                </option>
+                              ))}
+                            </select>
+
+                            {comparisonSector && (
+                              <div className="p-2 bg-purple-50/80 border border-purple-200 rounded-lg text-[11px] text-purple-950 flex items-center justify-between">
+                                <div className="flex items-center gap-1.5 font-medium">
+                                  <Zap className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                                  <span>
+                                    <strong>{selectedSector.name}</strong> ⚡ <strong>{comparisonSector.name}</strong>
+                                  </span>
+                                </div>
+                                <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded border border-purple-200 shrink-0">
+                                  Dual Analysis Active
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
+
+                      <div className="text-[11px] text-slate-400 leading-relaxed">
+                        Analyzing <strong>{activeSignals.filter(s => s.checked).length}</strong> checked signals {enableComparison && comparisonSector ? `(+ ${comparisonSector.prebakedSignals.length} signals from ${comparisonSector.name})` : ""} will activate Gemini AI.
+                      </div>
+
                       <button
                         onClick={runGeminiAnalysis}
                         disabled={loadingAnalysis || activeSignals.filter(s => s.checked).length === 0}
-                        className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-2"
+                        className={`w-full py-2.5 px-4 font-semibold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          enableComparison && comparisonSector
+                            ? "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+                            : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                        } disabled:bg-slate-200 disabled:text-slate-400`}
                         id="trigger_synthesis_btn"
                       >
                         {loadingAnalysis ? (
                           <RefreshCw className="w-4 h-4 animate-spin" />
                         ) : (
-                          <Sparkles className="w-4 h-4 text-indigo-200" />
+                          <Sparkles className="w-4 h-4 text-purple-200" />
                         )}
-                        {loadingAnalysis ? "Synthesizing..." : "Analyze Cluster with Gemini AI"}
+                        {loadingAnalysis
+                          ? "Synthesizing..."
+                          : enableComparison && comparisonSector
+                          ? "Run Dual-Sector Cross-Industry Analysis"
+                          : "Analyze Cluster with Gemini AI"}
                       </button>
                     </div>
                   </div>
@@ -927,6 +1774,30 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
               {analysisResult && (
                 <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm flex flex-col gap-6" id="gemini_report_card">
                   
+                  {/* Dual Sector Banner if comparison result exists */}
+                  {analysisResult.comparisonSector && (
+                    <div className="p-3.5 bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border border-purple-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs" id="dual_sector_banner">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-purple-600 text-white rounded-lg shadow-2xs shrink-0">
+                          <GitCompare className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-extrabold text-purple-700 uppercase tracking-widest block">
+                            Cross-Industry Intelligence Benchmark
+                          </span>
+                          <span className="text-xs font-black text-slate-900">
+                            {selectedSector.name} <span className="text-purple-600 font-normal">⚡</span> {analysisResult.comparisonSector}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-purple-800 bg-purple-100 border border-purple-200 px-2.5 py-1 rounded-full">
+                          Dual-Sector Synthesis Active
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Report Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-4" id="report_header">
                     <div>
@@ -947,7 +1818,16 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
                       
                       <div className="hidden sm:block h-8 w-px bg-slate-200" />
                       
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={downloadPDF}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+                          title="Download Executive Intelligence Briefing as PDF"
+                          id="btn_download_pdf"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Briefing (PDF)</span>
+                        </button>
                         <button
                           onClick={downloadSummaryTXT}
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
@@ -970,11 +1850,85 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
                     </div>
                   </div>
 
+                  {/* Cross-Industry Comparative Scoreboard */}
+                  {analysisResult.crossIndustryScore !== undefined && (
+                    <div className="p-4 bg-slate-50/80 border border-purple-100 rounded-xl flex flex-col gap-4" id="cross_industry_scoreboard">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <BarChart3 className="w-4 h-4 text-purple-600" />
+                          Cross-Industry Comparative Opportunity Breakdown
+                        </h4>
+                        <span className="text-[10px] font-bold text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-md">
+                          Multivariate Gemini Benchmark
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {/* Sector 1 */}
+                        <div className="p-3.5 bg-white border border-slate-200 rounded-xl text-center flex flex-col items-center justify-center">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                            {selectedSector.name}
+                          </span>
+                          <div className="text-2xl font-extrabold text-slate-800 mt-1">
+                            {analysisResult.sector1Score ?? analysisResult.opportunityScore}
+                            <span className="text-xs text-slate-400 font-normal">/100</span>
+                          </div>
+                          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
+                            <div
+                              className="bg-indigo-600 h-full rounded-full"
+                              style={{ width: `${analysisResult.sector1Score ?? analysisResult.opportunityScore}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Combined Cross Industry */}
+                        <div className="p-3.5 bg-gradient-to-b from-purple-50 to-indigo-50 border-2 border-purple-400/80 rounded-xl text-center flex flex-col items-center justify-center relative shadow-xs">
+                          <span className="absolute -top-2.5 bg-purple-600 text-white text-[9px] font-extrabold px-2 py-0.5 rounded-full tracking-wider uppercase">
+                            Cross-Sector Synergy
+                          </span>
+                          <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider block mt-1">
+                            Combined Cross-Industry
+                          </span>
+                          <div className="text-3xl font-black text-purple-700 mt-0.5 tracking-tight flex items-center justify-center gap-1">
+                            <Zap className="w-5 h-5 text-amber-500 fill-amber-400" />
+                            {analysisResult.crossIndustryScore}
+                            <span className="text-xs text-purple-400 font-medium">/100</span>
+                          </div>
+                          <div className="w-full bg-purple-200/80 h-2 rounded-full mt-2 overflow-hidden">
+                            <div
+                              className="bg-gradient-to-r from-purple-600 to-indigo-600 h-full rounded-full"
+                              style={{ width: `${analysisResult.crossIndustryScore}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Sector 2 */}
+                        <div className="p-3.5 bg-white border border-slate-200 rounded-xl text-center flex flex-col items-center justify-center">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                            {analysisResult.comparisonSector || "Secondary Sector"}
+                          </span>
+                          <div className="text-2xl font-extrabold text-slate-800 mt-1">
+                            {analysisResult.sector2Score ?? 78}
+                            <span className="text-xs text-slate-400 font-normal">/100</span>
+                          </div>
+                          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
+                            <div
+                              className="bg-purple-500 h-full rounded-full"
+                              style={{ width: `${analysisResult.sector2Score ?? 78}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Core Metrics: Opportunity score & prediction */}
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-5" id="report_metrics_row">
                     {/* Gauge/Score */}
                     <div className="md:col-span-3 flex flex-col items-center justify-center p-4 bg-slate-50 border border-slate-200/60 rounded-xl text-center" id="opportunity_score_container">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Opportunity Score</span>
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        {analysisResult.crossIndustryScore !== undefined ? "Base Sector Score" : "Opportunity Score"}
+                      </span>
                       <div className="relative mt-3 flex items-center justify-center">
                         {/* Circular numeric layout */}
                         <div className="text-3xl font-black text-indigo-600 tracking-tight">
@@ -1012,6 +1966,31 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
                       {analysisResult.synthesis}
                     </p>
                   </div>
+
+                  {/* Cross-Industry Synergies */}
+                  {analysisResult.crossIndustrySynergies && analysisResult.crossIndustrySynergies.length > 0 && (
+                    <div id="cross_industry_synergies_card" className="p-4 bg-purple-50/40 border border-purple-100 rounded-xl flex flex-col gap-3">
+                      <h4 className="text-xs font-bold text-purple-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <Zap className="w-4 h-4 text-purple-600" />
+                        Cross-Industry Convergence & Synergy Vectors
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {analysisResult.crossIndustrySynergies.map((syn, idx) => (
+                          <div key={idx} className="p-3 bg-white border border-purple-200/60 rounded-lg shadow-2xs flex flex-col justify-between">
+                            <div>
+                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-purple-700 mb-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-purple-600" />
+                                Synergy Driver #{idx + 1}
+                              </div>
+                              <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                                {syn}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Playbook Playboard */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5" id="playbook_grid">
@@ -1244,35 +2223,176 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
               </div>
 
               {/* Data Ingestion APIs Directory */}
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-                <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-3">
-                  External Open Data Ingestion Directory
-                </h3>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Avoid proprietary licensing (CB Insights, PitchBook) during the MVP. Use free public endpoints.
-                </p>
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col gap-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-slate-900">
+                        External Open Data Ingestion Directory
+                      </h3>
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">
+                        <Key className="w-3 h-3 text-indigo-600" />
+                        {activeKeyCount > 0 ? `${activeKeyCount} Keys Configured` : "Keyless Public Mode"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                      Real-time federal data endpoints. View API key storage status or manage credentials saved in local storage.
+                    </p>
+                  </div>
 
-                {/* API tab lists */}
-                <div className="flex gap-2.5 overflow-x-auto py-3 border-b border-slate-100" id="api_tabs">
-                  {INGESTION_RESOURCES.map((api, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setSelectedApiIndex(i)}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap transition-colors ${
-                        selectedApiIndex === i
-                          ? "bg-indigo-600 text-white"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}
-                      id={`api_tab_${i}`}
-                    >
-                      {api.name.split(" ")[0]} API
-                    </button>
-                  ))}
+                  <button
+                    onClick={() => setShowGovApiModal(true)}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs shrink-0 cursor-pointer"
+                    id="manage_keys_btn_buildplan"
+                  >
+                    <Key className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Manage Keys in LocalStorage</span>
+                  </button>
                 </div>
 
-                <div className="pt-4" id="selected_api_content">
-                  <h4 className="text-xs font-bold text-slate-800 flex items-center justify-between">
-                    {INGESTION_RESOURCES[selectedApiIndex].name}
+                {/* API KEY STATUS INDICATORS MATRIX FOR EACH PROVIDER */}
+                <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-4 shadow-3xs" id="api_key_status_matrix">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      API Key Status Indicators (LocalStorage Sync)
+                    </h4>
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      Stored in browser localStorage under <code className="font-mono bg-slate-200/70 px-1 py-0.5 rounded text-[10px]">gov_api_keys</code>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {/* Provider 1: SAM.gov */}
+                    {(() => {
+                      const st = getProviderKeyStatus("samGov");
+                      return (
+                        <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold text-slate-800 block truncate">SAM.gov Contracts</span>
+                            <span className="text-[10px] text-slate-400">Solicitations & Awards</span>
+                          </div>
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${st.badgeClass}`}>
+                            {st.isSet ? "Key Set" : "No Key"}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Provider 2: openFDA */}
+                    {(() => {
+                      const st = getProviderKeyStatus("openFda");
+                      return (
+                        <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold text-slate-800 block truncate">openFDA Surveillance</span>
+                            <span className="text-[10px] text-slate-400">Drugs, Devices & Recalls</span>
+                          </div>
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${st.badgeClass}`}>
+                            {st.isSet ? "Key Set" : "Public Mode"}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Provider 3: USPTO Patents */}
+                    {(() => {
+                      const st = getProviderKeyStatus("uspto");
+                      return (
+                        <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold text-slate-800 block truncate">USPTO PatentsView</span>
+                            <span className="text-[10px] text-slate-400">Patents & Assignees</span>
+                          </div>
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${st.badgeClass}`}>
+                            {st.isSet ? "Key Set" : "Open Data"}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Provider 4: SEC EDGAR */}
+                    {(() => {
+                      const st = getProviderKeyStatus("secEdgar");
+                      return (
+                        <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold text-slate-800 block truncate">SEC EDGAR RSS</span>
+                            <span className="text-[10px] text-slate-400">10-K, 8-K Filings</span>
+                          </div>
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${st.badgeClass}`}>
+                            {st.isSet ? "UA Set" : "Default UA"}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Provider 5: ClinicalTrials.gov */}
+                    {(() => {
+                      const st = getProviderKeyStatus("clinicalTrials");
+                      return (
+                        <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold text-slate-800 block truncate">ClinicalTrials.gov v2</span>
+                            <span className="text-[10px] text-slate-400">Biotech Study Registry</span>
+                          </div>
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${st.badgeClass}`}>
+                            Keyless API
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Provider 6: USASpending.gov */}
+                    {(() => {
+                      const st = getProviderKeyStatus("usaSpending");
+                      return (
+                        <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold text-slate-800 block truncate">USASpending.gov</span>
+                            <span className="text-[10px] text-slate-400">Federal Obligations</span>
+                          </div>
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${st.badgeClass}`}>
+                            Keyless API
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* API tab lists */}
+                <div className="flex gap-2.5 overflow-x-auto py-2 border-b border-slate-100" id="api_tabs">
+                  {INGESTION_RESOURCES.map((api, i) => {
+                    let providerKey = "uspto";
+                    if (i === 1) providerKey = "openFda";
+                    if (i === 2) providerKey = "samGov";
+                    if (i === 3) providerKey = "jobs";
+                    const statusObj = getProviderKeyStatus(providerKey);
+
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => setSelectedApiIndex(i)}
+                        className={`px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition-colors flex items-center gap-2 cursor-pointer ${
+                          selectedApiIndex === i
+                            ? "bg-indigo-600 text-white shadow-xs"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                        id={`api_tab_${i}`}
+                      >
+                        <span>{api.name.split(" ")[0]} API</span>
+                        <span className={`w-2 h-2 rounded-full ${statusObj.isSet ? "bg-emerald-400" : "bg-slate-300"}`} />
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2" id="selected_api_content">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold text-slate-800">
+                      {INGESTION_RESOURCES[selectedApiIndex].name}
+                    </h4>
                     <a
                       href={INGESTION_RESOURCES[selectedApiIndex].docsLink}
                       target="_blank"
@@ -1281,10 +2401,37 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
                     >
                       Developer Docs <ExternalLink className="w-3 h-3" />
                     </a>
-                  </h4>
+                  </div>
                   <p className="text-xs text-slate-500 mt-1">
                     {INGESTION_RESOURCES[selectedApiIndex].description}
                   </p>
+
+                  {/* Specific Provider Key Status Banner */}
+                  {(() => {
+                    let providerKey = "uspto";
+                    if (selectedApiIndex === 1) providerKey = "openFda";
+                    if (selectedApiIndex === 2) providerKey = "samGov";
+                    if (selectedApiIndex === 3) providerKey = "jobs";
+                    const st = getProviderKeyStatus(providerKey);
+
+                    return (
+                      <div className="mt-3 p-2.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-2">
+                          <Key className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                          <span className="font-semibold text-slate-700">API Key Status in LocalStorage:</span>
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded border ${st.badgeClass}`}>
+                            {st.statusText}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setShowGovApiModal(true)}
+                          className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                        >
+                          Change Key
+                        </button>
+                      </div>
+                    );
+                  })()}
 
                   {/* Copyable Python script & Live Execution button */}
                   <div className="mt-3 relative" id="code_snippet_box">
@@ -1769,6 +2916,18 @@ ${analysisResult.criticalRisks.map((risk, i) => `- ${risk}`).join('\n')}
             </div>
 
             {/* LIVE TEST RESULTS BADGES */}
+            {testError && (
+              <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-medium flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{testError}</span>
+                </div>
+                <button onClick={() => setTestError(null)} className="text-rose-600 font-bold px-1 cursor-pointer">
+                  ✕
+                </button>
+              </div>
+            )}
+
             {testResults && (
               <div className="mt-4 p-3 bg-slate-900 rounded-xl text-white text-xs space-y-1.5">
                 <div className="font-bold text-[11px] text-slate-400 uppercase tracking-wider mb-1">Live Connection Verification:</div>
