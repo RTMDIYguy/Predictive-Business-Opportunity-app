@@ -56,6 +56,7 @@ import {
 } from "lucide-react";
 import { SECTORS, COST_RESOURCES, TIMELINE_TASKS, INGESTION_RESOURCES } from "./data";
 import { Sector, AlternativeSignal, AnalysisResult, CostResource, TimelineTask } from "./types";
+import { trackEvent } from "./amplitude";
 
 export default function App() {
   // Navigation / Tabs
@@ -113,6 +114,7 @@ export default function App() {
     setTestingGovKeys(true);
     setTestResults(null);
     setTestError(null);
+    trackEvent('Gov API Keys Test Started', { configuredKeyCount: activeKeyCount });
     try {
       const res = await fetch("/api/gov/test-keys", {
         method: "POST",
@@ -206,6 +208,11 @@ export default function App() {
   // Run Serverless Scraper Job (LinkedIn Hiring Trends, Reddit, RSS, Talent Spikes)
   const handleRunScraperJob = async (typeOverride?: "all" | "reddit" | "news_rss" | "hiring_trends" | "linkedin_hiring") => {
     const targetType = typeOverride || scraperType;
+    trackEvent('Scraper Job Started', {
+      scraperType: targetType,
+      sectorId: selectedSector.id,
+      sectorName: selectedSector.name,
+    });
     setRunningScraper(true);
     setScraperSuccessMsg(null);
     setScraperErrorMsg(null);
@@ -242,11 +249,21 @@ export default function App() {
           ? `Ingested ${data.count} company-level LinkedIn hiring metrics for ${selectedSector.name}!`
           : `Successfully scraped & ingested ${data.count} alternative data signals!`;
         setScraperSuccessMsg(msg);
+        trackEvent('Scraper Job Completed', {
+          scraperType: targetType,
+          sectorId: selectedSector.id,
+          signalsIngested: data.count,
+        });
         setTimeout(() => setScraperSuccessMsg(null), 6000);
       }
     } catch (err: any) {
       console.error("Scraper Error:", err);
       setScraperErrorMsg(err.message || "Scraper execution failed");
+      trackEvent('Scraper Job Failed', {
+        scraperType: targetType,
+        sectorId: selectedSector.id,
+        error: err.message || 'Scraper execution failed',
+      });
     } finally {
       setRunningScraper(false);
     }
@@ -297,6 +314,11 @@ export default function App() {
 
   // Fetch live public data records (ClinicalTrials.gov, USASpending, SAM.gov, openFDA, arXiv)
   const handleFetchLiveOpenData = async (customKeywords?: string[]) => {
+    trackEvent('Live Data Fetch Started', {
+      sectorId: selectedSector.id,
+      sectorName: selectedSector.name,
+      keywords: customKeywords || [selectedSector.name.split(" ")[0]],
+    });
     setFetchingLiveOpenData(true);
     setLiveDataSuccessMsg(null);
     setLiveDataErrorMsg(null);
@@ -322,11 +344,20 @@ export default function App() {
         setActiveSignals(prev => [...data.signals, ...prev]);
         const authSuffix = data.authenticatedCount > 0 ? ` (${data.authenticatedCount} authenticated via Gov API keys)` : "";
         setLiveDataSuccessMsg(`Successfully ingested ${data.count} real-time public records${authSuffix}!`);
+        trackEvent('Live Data Fetch Completed', {
+          sectorId: selectedSector.id,
+          recordsIngested: data.count,
+          authenticatedCount: data.authenticatedCount ?? 0,
+        });
         setTimeout(() => setLiveDataSuccessMsg(null), 6000);
       }
     } catch (err: any) {
       console.error("Live Ingestion Error:", err);
       setLiveDataErrorMsg(err.message || "Could not fetch live open data at this time. Please check your connection or API keys.");
+      trackEvent('Live Data Fetch Failed', {
+        sectorId: selectedSector.id,
+        error: err.message || 'Ingestion failed',
+      });
     } finally {
       setFetchingLiveOpenData(false);
     }
@@ -351,6 +382,10 @@ export default function App() {
       setComparisonSector(alt);
     }
   }, [selectedSector]);
+
+  useEffect(() => {
+    trackEvent('Tab Viewed', { tab: activeTab });
+  }, [activeTab]);
 
   // Recalculate monthly budget when resources change
   useEffect(() => {
@@ -391,6 +426,11 @@ export default function App() {
 
     setActiveSignals(prev => [...prev, customSig]);
     setShowAddModal(false);
+    trackEvent('Custom Signal Added', {
+      signalType: newSigType,
+      strength: newSigStrength,
+      sectorId: selectedSector.id,
+    });
     // Reset form
     setNewSigTitle("");
     setNewSigSource("");
@@ -408,6 +448,13 @@ export default function App() {
     setLoadingAnalysis(true);
     setAnalysisError(null);
     setAnalysisResult(null);
+    trackEvent('Analysis Started', {
+      sectorId: selectedSector.id,
+      sectorName: selectedSector.name,
+      signalCount: selectedSigs.length,
+      comparisonEnabled: enableComparison,
+      comparisonSector: comparisonSector?.name,
+    });
 
     // Dynamic step text updates to show rich analytical simulation steps
     const steps = enableComparison && comparisonSector
@@ -473,11 +520,20 @@ export default function App() {
 
       const result: AnalysisResult = await response.json();
       setAnalysisResult(result);
+      trackEvent('Analysis Completed', {
+        sectorId: selectedSector.id,
+        opportunityScore: result.opportunityScore,
+        comparisonEnabled: enableComparison,
+      });
     } catch (err: any) {
       clearInterval(stepInterval);
       console.error(err);
       // Friendly, descriptive fallback
       setAnalysisError(err.message || "An issue occurred querying the server.");
+      trackEvent('Analysis Failed', {
+        sectorId: selectedSector.id,
+        error: err.message || 'Analysis failed',
+      });
     } finally {
       setLoadingAnalysis(false);
     }
@@ -489,6 +545,10 @@ export default function App() {
     setAnalysisError(null);
     setAnalysisResult(null);
     setLoadingStepText("Synthesizing predictive baseline analysis locally...");
+    trackEvent('Synthetic Analysis Started', {
+      sectorId: selectedSector.id,
+      comparisonEnabled: enableComparison,
+    });
 
     setTimeout(() => {
       const selectedCount = activeSignals.filter(s => s.checked).length;
@@ -548,6 +608,10 @@ export default function App() {
 
       setAnalysisResult(mockRes);
       setLoadingAnalysis(false);
+      trackEvent('Synthetic Analysis Completed', {
+        sectorId: selectedSector.id,
+        opportunityScore: mockRes.opportunityScore,
+      });
     }, 1500);
   };
 
@@ -611,6 +675,7 @@ export default function App() {
   // Download entire Gemini AI analysis as structured JSON
   const downloadJSON = () => {
     if (!analysisResult) return;
+    trackEvent('Report Downloaded', { format: 'json', sectorId: selectedSector.id });
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(analysisResult, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
@@ -623,6 +688,7 @@ export default function App() {
   // Download a beautiful plaintext formatted summary report of the analysis
   const downloadSummaryTXT = () => {
     if (!analysisResult) return;
+    trackEvent('Report Downloaded', { format: 'txt', sectorId: selectedSector.id });
     const activeCheckedSignals = activeSignals.filter(s => s.checked);
     const content = `===========================================================
 PRE-MARKET OPPORTUNITY INTELLIGENCE REPORT
@@ -679,6 +745,7 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
   // Download executive intelligence brief as a PDF document using jsPDF
   const downloadPDF = () => {
     if (!analysisResult) return;
+    trackEvent('Report Downloaded', { format: 'pdf', sectorId: selectedSector.id });
     const doc = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
     const activeCheckedSignals = activeSignals.filter(s => s.checked);
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -1003,7 +1070,10 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                   {SECTORS.map((sector) => (
                     <button
                       key={sector.id}
-                      onClick={() => setSelectedSector(sector)}
+                      onClick={() => {
+                        trackEvent('Sector Selected', { sectorId: sector.id, sectorName: sector.name });
+                        setSelectedSector(sector);
+                      }}
                       className={`w-full text-left p-3.5 rounded-xl border transition-all flex items-start gap-3.5 ${
                         selectedSector.id === sector.id
                           ? "bg-indigo-50/50 border-indigo-300 ring-1 ring-indigo-300"
