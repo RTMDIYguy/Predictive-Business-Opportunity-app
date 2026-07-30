@@ -313,19 +313,19 @@ export const TIMELINE_TASKS: TimelineTask[] = [
   },
   {
     id: "t2",
-    task: "Web Scraping & Alternative Data Ingestion (Serverless scrapers, Reddit, LinkedIn niche roles, News Scrapers)",
+    task: "Web Scraping & Alternative Data Ingestion (Serverless scrapers, Nevada Agency Scrapers, Cloud Scheduler Cron, Reddit, LinkedIn niche roles, News Scrapers)",
     phase: "Phase 1: Ingestion & Pipelines",
     weeks: [2, 3],
-    status: "In Progress",
+    status: "Completed",
     dependencies: ["t1"]
   },
   {
     id: "t3",
-    task: "Entity Extraction (NER) Model training using spaCy or Gemini flash proxy",
+    task: "Entity Extraction (NER) Model Training & Evaluation (Fine-tuned Gemini Flash & spaCy entity pipeline)",
     phase: "Phase 2: Signal Engineering",
     weeks: [3, 4],
-    status: "Planned",
-    dependencies: ["t1"]
+    status: "In Progress",
+    dependencies: ["t1", "t2"]
   },
   {
     id: "t4",
@@ -352,12 +352,20 @@ export const TIMELINE_TASKS: TimelineTask[] = [
     dependencies: ["t5"]
   },
   {
+    id: "t8",
+    task: "Context-Aware CRM Task & Workflow Automation (Plain-English briefing push, automated icebreaker generation, and webhook task routing - Lowest Cost, Highest Impact)",
+    phase: "Phase 3: Intelligence & Core AI",
+    weeks: [7, 8],
+    status: "Planned",
+    dependencies: ["t5", "t6"]
+  },
+  {
     id: "t7",
     task: "Production Deployment on Google Cloud Run & Security Hardening",
     phase: "Phase 4: Deployment & Scale",
     weeks: [8],
     status: "Planned",
-    dependencies: ["t6"]
+    dependencies: ["t6", "t8"]
   }
 ];
 

@@ -52,15 +52,18 @@ import {
   Filter,
   GitCompare,
   Users,
-  Building2
+  Building2,
+  Link2,
+  BrainCircuit,
+  History
 } from "lucide-react";
 import { SECTORS, COST_RESOURCES, TIMELINE_TASKS, INGESTION_RESOURCES } from "./data";
 import { Sector, AlternativeSignal, AnalysisResult, CostResource, TimelineTask } from "./types";
-import { trackEvent } from "./amplitude";
+import { EntityExtractionStudio } from "./components/EntityExtractionStudio";
 
 export default function App() {
   // Navigation / Tabs
-  const [activeTab, setActiveTab] = useState<"sandbox" | "buildplan" | "architecture">("sandbox");
+  const [activeTab, setActiveTab] = useState<"sandbox" | "buildplan" | "architecture" | "nerstudio">("sandbox");
 
   // Sector Selection State
   const [selectedSector, setSelectedSector] = useState<Sector>(SECTORS[0]);
@@ -89,15 +92,26 @@ export default function App() {
   const [showGovApiModal, setShowGovApiModal] = useState(false);
   const [govKeys, setGovKeys] = useState<{
     samGovKey: string;
+    samUei: string;
     openFdaKey: string;
     usptoKey: string;
     secUserAgent: string;
   }>(() => {
     try {
       const saved = localStorage.getItem("gov_api_keys");
-      return saved ? JSON.parse(saved) : { samGovKey: "", openFdaKey: "", usptoKey: "", secUserAgent: "GovAnalytics/1.0 (contact@gov.us)" };
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          samGovKey: parsed.samGovKey || "",
+          samUei: parsed.samUei || "LX7PJGDDUUU1",
+          openFdaKey: parsed.openFdaKey || "",
+          usptoKey: parsed.usptoKey || "",
+          secUserAgent: parsed.secUserAgent || "GovAnalytics/1.0 (contact@gov.us)"
+        };
+      }
+      return { samGovKey: "", samUei: "LX7PJGDDUUU1", openFdaKey: "", usptoKey: "", secUserAgent: "GovAnalytics/1.0 (contact@gov.us)" };
     } catch {
-      return { samGovKey: "", openFdaKey: "", usptoKey: "", secUserAgent: "GovAnalytics/1.0 (contact@gov.us)" };
+      return { samGovKey: "", samUei: "LX7PJGDDUUU1", openFdaKey: "", usptoKey: "", secUserAgent: "GovAnalytics/1.0 (contact@gov.us)" };
     }
   });
 
@@ -114,7 +128,6 @@ export default function App() {
     setTestingGovKeys(true);
     setTestResults(null);
     setTestError(null);
-    trackEvent('Gov API Keys Test Started', { configuredKeyCount: activeKeyCount });
     try {
       const res = await fetch("/api/gov/test-keys", {
         method: "POST",
@@ -205,14 +218,43 @@ export default function App() {
   const [scraperSuccessMsg, setScraperSuccessMsg] = useState<string | null>(null);
   const [scraperErrorMsg, setScraperErrorMsg] = useState<string | null>(null);
 
+  // Recent Crawls History State (Last 5 successful crawls)
+  const [recentCrawls, setRecentCrawls] = useState<Array<{ url: string; title: string; domain: string; timestamp: string }>>([
+    {
+      url: "https://www.defense.gov/News/Releases/Release/Article/3920191/dod-announces-microelectronics-commons-award/",
+      title: "DoD Microelectronics Commons $269M Award",
+      domain: "defense.gov",
+      timestamp: "10m ago"
+    },
+    {
+      url: "https://ndep.nv.gov/water/water-pollution-control/permits/thacker-pass-phase2",
+      title: "NDEP Permit Approval #WPCC-2026-004",
+      domain: "ndep.nv.gov",
+      timestamp: "35m ago"
+    },
+    {
+      url: "https://www.fda.gov/news-events/press-announcements/fda-approves-mrna-therapeutics",
+      title: "FDA Fast-Track IND-168920 Personalized mRNA",
+      domain: "fda.gov",
+      timestamp: "2h ago"
+    },
+    {
+      url: "https://dmv.nv.gov/autonomous/testing-permits-2026-q3.htm",
+      title: "Nevada DMV CAV Autonomous Fleet Testing Permit",
+      domain: "dmv.nv.gov",
+      timestamp: "4h ago"
+    },
+    {
+      url: "https://www.asml.com/en/news/press-releases/2026/high-na-euv-mirror-alignment",
+      title: "ASML High-NA EUV Mirror Optics Milestone",
+      domain: "asml.com",
+      timestamp: "1d ago"
+    }
+  ]);
+
   // Run Serverless Scraper Job (LinkedIn Hiring Trends, Reddit, RSS, Talent Spikes)
   const handleRunScraperJob = async (typeOverride?: "all" | "reddit" | "news_rss" | "hiring_trends" | "linkedin_hiring") => {
     const targetType = typeOverride || scraperType;
-    trackEvent('Scraper Job Started', {
-      scraperType: targetType,
-      sectorId: selectedSector.id,
-      sectorName: selectedSector.name,
-    });
     setRunningScraper(true);
     setScraperSuccessMsg(null);
     setScraperErrorMsg(null);
@@ -249,44 +291,36 @@ export default function App() {
           ? `Ingested ${data.count} company-level LinkedIn hiring metrics for ${selectedSector.name}!`
           : `Successfully scraped & ingested ${data.count} alternative data signals!`;
         setScraperSuccessMsg(msg);
-        trackEvent('Scraper Job Completed', {
-          scraperType: targetType,
-          sectorId: selectedSector.id,
-          signalsIngested: data.count,
-        });
         setTimeout(() => setScraperSuccessMsg(null), 6000);
       }
     } catch (err: any) {
       console.error("Scraper Error:", err);
       setScraperErrorMsg(err.message || "Scraper execution failed");
-      trackEvent('Scraper Job Failed', {
-        scraperType: targetType,
-        sectorId: selectedSector.id,
-        error: err.message || 'Scraper execution failed',
-      });
     } finally {
       setRunningScraper(false);
     }
   };
 
   // Crawl & Scrape Custom URL / Press Release
-  const handleScrapeCustomUrl = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customScrapeUrl || !customScrapeUrl.startsWith("http")) {
+  const handleScrapeCustomUrl = async (e?: React.FormEvent, directUrl?: string) => {
+    if (e) e.preventDefault();
+    const urlToCrawl = (directUrl || customScrapeUrl || "").trim();
+    if (!urlToCrawl || !urlToCrawl.startsWith("http")) {
       setScraperErrorMsg("Please enter a valid URL starting with http:// or https://");
       return;
     }
 
     setCrawlingUrl(true);
+    setCustomScrapeUrl(urlToCrawl);
     setScraperSuccessMsg(null);
     setScraperErrorMsg(null);
-    setScraperLogs(prev => [...prev, `[INIT] Crawling target URL: ${customScrapeUrl}`]);
+    setScraperLogs(prev => [...prev, `[INIT] Crawling target URL: ${urlToCrawl}`]);
 
     try {
       const response = await fetch("/api/scrape/url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetUrl: customScrapeUrl.trim() })
+        body: JSON.stringify({ targetUrl: urlToCrawl })
       });
 
       const data = await response.json();
@@ -301,6 +335,22 @@ export default function App() {
       if (data.signal) {
         setActiveSignals(prev => [data.signal, ...prev]);
         setScraperSuccessMsg(`Successfully extracted signal from ${data.domain || 'target page'}!`);
+
+        let parsedDomain = "web";
+        try {
+          parsedDomain = new URL(urlToCrawl).hostname.replace(/^www\./, "");
+        } catch (err) {
+          parsedDomain = data.domain || "web";
+        }
+
+        const newCrawl = {
+          url: urlToCrawl,
+          title: data.signal.title || urlToCrawl,
+          domain: parsedDomain,
+          timestamp: "Just now"
+        };
+
+        setRecentCrawls(prev => [newCrawl, ...prev.filter(item => item.url !== urlToCrawl)].slice(0, 5));
         setCustomScrapeUrl("");
         setTimeout(() => setScraperSuccessMsg(null), 6000);
       }
@@ -314,11 +364,6 @@ export default function App() {
 
   // Fetch live public data records (ClinicalTrials.gov, USASpending, SAM.gov, openFDA, arXiv)
   const handleFetchLiveOpenData = async (customKeywords?: string[]) => {
-    trackEvent('Live Data Fetch Started', {
-      sectorId: selectedSector.id,
-      sectorName: selectedSector.name,
-      keywords: customKeywords || [selectedSector.name.split(" ")[0]],
-    });
     setFetchingLiveOpenData(true);
     setLiveDataSuccessMsg(null);
     setLiveDataErrorMsg(null);
@@ -344,22 +389,90 @@ export default function App() {
         setActiveSignals(prev => [...data.signals, ...prev]);
         const authSuffix = data.authenticatedCount > 0 ? ` (${data.authenticatedCount} authenticated via Gov API keys)` : "";
         setLiveDataSuccessMsg(`Successfully ingested ${data.count} real-time public records${authSuffix}!`);
-        trackEvent('Live Data Fetch Completed', {
-          sectorId: selectedSector.id,
-          recordsIngested: data.count,
-          authenticatedCount: data.authenticatedCount ?? 0,
-        });
         setTimeout(() => setLiveDataSuccessMsg(null), 6000);
       }
     } catch (err: any) {
       console.error("Live Ingestion Error:", err);
       setLiveDataErrorMsg(err.message || "Could not fetch live open data at this time. Please check your connection or API keys.");
-      trackEvent('Live Data Fetch Failed', {
-        sectorId: selectedSector.id,
-        error: err.message || 'Ingestion failed',
-      });
     } finally {
       setFetchingLiveOpenData(false);
+    }
+  };
+
+  // State for Nevada Agency Scraper & Cloud Scheduler Cron Trigger
+  const [runningNevadaScraper, setRunningNevadaScraper] = useState(false);
+  const [triggeringCron, setTriggeringCron] = useState(false);
+  const [cronLastRunData, setCronLastRunData] = useState<any | null>(null);
+
+  // Handler: Run Nevada State Agency Scrapers (NDEP, Gaming Control Board, Nevada DMV CAV)
+  const handleRunNevadaScraper = async (agencyScope: "ndep" | "gaming" | "dmv_cav" | "all" = "all") => {
+    setRunningNevadaScraper(true);
+    setScraperSuccessMsg(null);
+    setScraperErrorMsg(null);
+    setScraperLogs(prev => [...prev, `[INIT] Executing Nevada Agency Scraper (Target: ${agencyScope.toUpperCase()})...`]);
+
+    try {
+      const response = await fetch("/api/scrape/nevada", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agency: agencyScope, keyword: selectedSector.name })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}: Nevada scraper failed`);
+      }
+
+      if (data.logs) {
+        setScraperLogs(data.logs);
+      }
+
+      if (data.signals && data.signals.length > 0) {
+        setActiveSignals(prev => [...data.signals, ...prev]);
+        setScraperSuccessMsg(`Successfully scraped & ingested ${data.count} Nevada State Agency filings (${agencyScope.toUpperCase()})!`);
+        setTimeout(() => setScraperSuccessMsg(null), 7000);
+      }
+    } catch (err: any) {
+      console.error("Nevada Scraper Error:", err);
+      setScraperErrorMsg(err.message || "Nevada agency scraper job failed.");
+    } finally {
+      setRunningNevadaScraper(false);
+    }
+  };
+
+  // Handler: Trigger Cloud Scheduler Automated Cron Run
+  const handleTriggerCloudSchedulerCron = async () => {
+    setTriggeringCron(true);
+    setScraperSuccessMsg(null);
+    setScraperErrorMsg(null);
+    setScraperLogs(prev => [...prev, `[INIT] Triggering GCP Cloud Scheduler cron endpoint (/api/cron/ingest)...`]);
+
+    try {
+      const response = await fetch("/api/cron/ingest", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "x-cloudscheduler-secret": "cloud-run-scheduled-trigger-2026"
+        }
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}: Scheduled cron failed`);
+      }
+
+      setCronLastRunData(data);
+      if (data.logs) {
+        setScraperLogs(data.logs);
+      }
+
+      setScraperSuccessMsg(`GCP Cloud Scheduler Cron Executed Successfully! Ingested ${data.signalsIngested} signals across 4 pipelines.`);
+      setTimeout(() => setScraperSuccessMsg(null), 8000);
+    } catch (err: any) {
+      console.error("Cloud Scheduler Trigger Error:", err);
+      setScraperErrorMsg(err.message || "Failed to trigger Cloud Scheduler cron endpoint.");
+    } finally {
+      setTriggeringCron(false);
     }
   };
 
@@ -382,10 +495,6 @@ export default function App() {
       setComparisonSector(alt);
     }
   }, [selectedSector]);
-
-  useEffect(() => {
-    trackEvent('Tab Viewed', { tab: activeTab });
-  }, [activeTab]);
 
   // Recalculate monthly budget when resources change
   useEffect(() => {
@@ -426,11 +535,6 @@ export default function App() {
 
     setActiveSignals(prev => [...prev, customSig]);
     setShowAddModal(false);
-    trackEvent('Custom Signal Added', {
-      signalType: newSigType,
-      strength: newSigStrength,
-      sectorId: selectedSector.id,
-    });
     // Reset form
     setNewSigTitle("");
     setNewSigSource("");
@@ -448,13 +552,6 @@ export default function App() {
     setLoadingAnalysis(true);
     setAnalysisError(null);
     setAnalysisResult(null);
-    trackEvent('Analysis Started', {
-      sectorId: selectedSector.id,
-      sectorName: selectedSector.name,
-      signalCount: selectedSigs.length,
-      comparisonEnabled: enableComparison,
-      comparisonSector: comparisonSector?.name,
-    });
 
     // Dynamic step text updates to show rich analytical simulation steps
     const steps = enableComparison && comparisonSector
@@ -520,20 +617,11 @@ export default function App() {
 
       const result: AnalysisResult = await response.json();
       setAnalysisResult(result);
-      trackEvent('Analysis Completed', {
-        sectorId: selectedSector.id,
-        opportunityScore: result.opportunityScore,
-        comparisonEnabled: enableComparison,
-      });
     } catch (err: any) {
       clearInterval(stepInterval);
       console.error(err);
       // Friendly, descriptive fallback
       setAnalysisError(err.message || "An issue occurred querying the server.");
-      trackEvent('Analysis Failed', {
-        sectorId: selectedSector.id,
-        error: err.message || 'Analysis failed',
-      });
     } finally {
       setLoadingAnalysis(false);
     }
@@ -545,10 +633,6 @@ export default function App() {
     setAnalysisError(null);
     setAnalysisResult(null);
     setLoadingStepText("Synthesizing predictive baseline analysis locally...");
-    trackEvent('Synthetic Analysis Started', {
-      sectorId: selectedSector.id,
-      comparisonEnabled: enableComparison,
-    });
 
     setTimeout(() => {
       const selectedCount = activeSignals.filter(s => s.checked).length;
@@ -608,10 +692,6 @@ export default function App() {
 
       setAnalysisResult(mockRes);
       setLoadingAnalysis(false);
-      trackEvent('Synthetic Analysis Completed', {
-        sectorId: selectedSector.id,
-        opportunityScore: mockRes.opportunityScore,
-      });
     }, 1500);
   };
 
@@ -675,7 +755,6 @@ export default function App() {
   // Download entire Gemini AI analysis as structured JSON
   const downloadJSON = () => {
     if (!analysisResult) return;
-    trackEvent('Report Downloaded', { format: 'json', sectorId: selectedSector.id });
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(analysisResult, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
@@ -688,7 +767,6 @@ export default function App() {
   // Download a beautiful plaintext formatted summary report of the analysis
   const downloadSummaryTXT = () => {
     if (!analysisResult) return;
-    trackEvent('Report Downloaded', { format: 'txt', sectorId: selectedSector.id });
     const activeCheckedSignals = activeSignals.filter(s => s.checked);
     const content = `===========================================================
 PRE-MARKET OPPORTUNITY INTELLIGENCE REPORT
@@ -745,7 +823,6 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
   // Download executive intelligence brief as a PDF document using jsPDF
   const downloadPDF = () => {
     if (!analysisResult) return;
-    trackEvent('Report Downloaded', { format: 'pdf', sectorId: selectedSector.id });
     const doc = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
     const activeCheckedSignals = activeSignals.filter(s => s.checked);
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -1038,6 +1115,18 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                 Live Build Plan
               </button>
               <button
+                onClick={() => setActiveTab("nerstudio")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  activeTab === "nerstudio"
+                    ? "bg-white text-indigo-900 shadow-xs border border-purple-200"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                id="tab_nerstudio"
+              >
+                <BrainCircuit className="w-4 h-4 text-purple-600" />
+                Entity Extraction (NER)
+              </button>
+              <button
                 onClick={() => setActiveTab("architecture")}
                 className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
                   activeTab === "architecture"
@@ -1070,10 +1159,7 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                   {SECTORS.map((sector) => (
                     <button
                       key={sector.id}
-                      onClick={() => {
-                        trackEvent('Sector Selected', { sectorId: sector.id, sectorName: sector.name });
-                        setSelectedSector(sector);
-                      }}
+                      onClick={() => setSelectedSector(sector)}
                       className={`w-full text-left p-3.5 rounded-xl border transition-all flex items-start gap-3.5 ${
                         selectedSector.id === sector.id
                           ? "bg-indigo-50/50 border-indigo-300 ring-1 ring-indigo-300"
@@ -1399,78 +1485,222 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                         </button>
                       </div>
 
+                      {/* NEVADA SECTOR STATE AGENCY SCRAPERS PANEL */}
+                      <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="w-4 h-4 text-emerald-400" />
+                            <h4 className="text-xs font-bold text-white">Nevada State Agency Scraper Pipeline</h4>
+                            <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
+                              State Government Portal CIK/Permits
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">Scrapes NDEP Environmental, Gaming Control & DMV CAV Registries</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                          <button
+                            onClick={() => handleRunNevadaScraper("ndep")}
+                            disabled={runningNevadaScraper}
+                            className="p-2.5 bg-slate-900 hover:bg-slate-800/80 border border-slate-700/80 hover:border-emerald-500/50 rounded-lg text-left transition-all cursor-pointer disabled:opacity-50 group"
+                          >
+                            <div className="text-[11px] font-bold text-emerald-400 group-hover:text-emerald-300 flex items-center justify-between">
+                              <span>NDEP (Environmental)</span>
+                              <Zap className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">Lithium processing & mining reclamation permits (BMRR).</div>
+                          </button>
+
+                          <button
+                            onClick={() => handleRunNevadaScraper("gaming")}
+                            disabled={runningNevadaScraper}
+                            className="p-2.5 bg-slate-900 hover:bg-slate-800/80 border border-slate-700/80 hover:border-amber-500/50 rounded-lg text-left transition-all cursor-pointer disabled:opacity-50 group"
+                          >
+                            <div className="text-[11px] font-bold text-amber-400 group-hover:text-amber-300 flex items-center justify-between">
+                              <span>Nevada Gaming Board</span>
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">Biometric gaming wallets, tech approvals & sports wagering engines.</div>
+                          </button>
+
+                          <button
+                            onClick={() => handleRunNevadaScraper("dmv_cav")}
+                            disabled={runningNevadaScraper}
+                            className="p-2.5 bg-slate-900 hover:bg-slate-800/80 border border-slate-700/80 hover:border-sky-500/50 rounded-lg text-left transition-all cursor-pointer disabled:opacity-50 group"
+                          >
+                            <div className="text-[11px] font-bold text-sky-400 group-hover:text-sky-300 flex items-center justify-between">
+                              <span>Nevada DMV CAV</span>
+                              <Activity className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">Autonomous vehicle fleet testing permits in Vegas & Reno corridors.</div>
+                          </button>
+
+                          <button
+                            onClick={() => handleRunNevadaScraper("all")}
+                            disabled={runningNevadaScraper}
+                            className="p-2.5 bg-emerald-950/40 hover:bg-emerald-900/40 border border-emerald-500/40 rounded-lg text-left transition-all cursor-pointer disabled:opacity-50 group"
+                          >
+                            <div className="text-[11px] font-bold text-emerald-300 flex items-center justify-between">
+                              <span>Run All Nevada Scrapers</span>
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                            </div>
+                            <div className="text-[10px] text-emerald-200/80 mt-0.5 leading-tight">Executes full sweep across NDEP, Gaming Board & DMV CAV.</div>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* GCP CLOUD SCHEDULER AUTOMATED CRON PANEL */}
+                      <div className="bg-slate-950 p-4 rounded-xl border border-indigo-900/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-indigo-400 animate-pulse" />
+                            <span className="text-xs font-bold text-white">GCP Cloud Scheduler Automated Ingestion Cron</span>
+                            <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-indigo-950 text-indigo-300 border border-indigo-500/40">
+                              Schedule: 0 */6 * * * (Every 6 Hours)
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 leading-normal">
+                            Automated trigger endpoint: <code className="text-indigo-300 font-mono bg-slate-900 px-1.5 py-0.5 rounded text-[10px]">POST /api/cron/ingest</code>. Fully orchestrated serverless background sweeps.
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={handleTriggerCloudSchedulerCron}
+                          disabled={triggeringCron}
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0 shadow-md border border-indigo-400/30"
+                          id="btn_trigger_cloud_scheduler"
+                        >
+                          <Play className={`w-3.5 h-3.5 ${triggeringCron ? "animate-spin" : "fill-current"}`} />
+                          <span>{triggeringCron ? "Running Cron..." : "Trigger Cloud Scheduler Cron Job Now"}</span>
+                        </button>
+                      </div>
+
                       {/* TOPIC & TARGET COMPANY FILTER & ON-DEMAND URL CRAWLER FORM */}
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 pt-2">
                         {/* Topic & Target Company Filter for Scraper Bots (7 cols) */}
-                        <div className="md:col-span-7 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
-                              <Filter className="w-3.5 h-3.5 text-amber-400" />
-                              <span>Scraper Topic & Company Entity Filter</span>
-                            </label>
-                            <span className="text-[10px] text-slate-500 font-normal">Active Sector: {selectedSector.name}</span>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <div>
-                              <span className="text-[10px] text-slate-400 block mb-1">Target Company / Employer (Optional)</span>
-                              <input
-                                type="text"
-                                value={scraperCompanyInput}
-                                onChange={(e) => setScraperCompanyInput(e.target.value)}
-                                placeholder="e.g. Anduril, Moderna, ASML..."
-                                className="w-full bg-slate-900 border border-slate-700 text-slate-100 text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:border-blue-500 placeholder-slate-600"
-                              />
+                        <div className="md:col-span-7 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-3">
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                                <Filter className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Scraper Topic & Company Entity Filter</span>
+                              </label>
+                              <span className="text-[10px] text-slate-500 font-normal">Active: {selectedSector.name}</span>
                             </div>
-                            <div>
-                              <span className="text-[10px] text-slate-400 block mb-1">Keyword / Skill Focus</span>
-                              <div className="flex gap-1.5">
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div>
+                                <span className="text-[10px] text-slate-400 block mb-1">Target Company (Optional)</span>
+                                <input
+                                  type="text"
+                                  value={scraperCompanyInput}
+                                  onChange={(e) => setScraperCompanyInput(e.target.value)}
+                                  placeholder="e.g. Anduril, Moderna..."
+                                  className="w-full bg-slate-900 border border-slate-700 text-slate-100 text-xs px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-blue-500 placeholder-slate-600"
+                                />
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-400 block mb-1">Keyword / Skill Focus</span>
                                 <input
                                   type="text"
                                   value={scraperKeyword}
                                   onChange={(e) => setScraperKeyword(e.target.value)}
                                   placeholder={`e.g. ${selectedSector.name.split(" ")[0]}`}
-                                  className="flex-1 bg-slate-900 border border-slate-700 text-slate-100 text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:border-amber-500 placeholder-slate-600"
+                                  className="w-full bg-slate-900 border border-slate-700 text-slate-100 text-xs px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-amber-500 placeholder-slate-600"
                                 />
-                                <button
-                                  onClick={() => handleRunScraperJob("linkedin_hiring")}
-                                  disabled={runningScraper}
-                                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50 shrink-0 shadow-2xs"
-                                  title="Run LinkedIn Hiring Trends Scraper"
-                                >
-                                  <Users className="w-3.5 h-3.5" />
-                                  <span>{runningScraper ? "Scraping..." : "Scrape"}</span>
-                                </button>
                               </div>
                             </div>
                           </div>
+
+                          <button
+                            onClick={() => handleRunScraperJob("linkedin_hiring")}
+                            disabled={runningScraper}
+                            className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+                            title="Run LinkedIn Hiring Trends Scraper"
+                          >
+                            <Users className="w-3.5 h-3.5" />
+                            <span>{runningScraper ? "Scraping Hiring Signals..." : "Scrape Hiring & Tech Signals"}</span>
+                          </button>
                         </div>
 
-                        {/* Direct URL Scraper Form (5 cols) */}
-                        <form onSubmit={handleScrapeCustomUrl} className="md:col-span-5 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2">
-                          <label className="text-[11px] font-bold text-slate-300 flex items-center justify-between">
-                            <span>On-Demand URL Crawler</span>
-                            <span className="text-[10px] text-slate-500 font-normal">Articles / Releases</span>
-                          </label>
-                          <div className="flex gap-2">
-                            <input
-                              type="url"
-                              value={customScrapeUrl}
-                              onChange={(e) => setCustomScrapeUrl(e.target.value)}
-                              placeholder="https://www.defense.gov/News/Releases/..."
-                              className="flex-1 bg-slate-900 border border-slate-700 text-slate-100 text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:border-indigo-500 placeholder-slate-600"
-                            />
-                            <button
-                              type="submit"
-                              disabled={crawlingUrl}
-                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 shadow-2xs"
-                            >
-                              <Search className="w-3.5 h-3.5" />
-                              <span>{crawlingUrl ? "Crawling..." : "Crawl URL"}</span>
-                            </button>
+                        {/* Direct URL Scraper Form & Recent Crawls Side-Panel (5 cols) */}
+                        <div className="md:col-span-5 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-3">
+                          <form onSubmit={(e) => handleScrapeCustomUrl(e)} className="flex flex-col gap-2.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                                <Search className="w-3.5 h-3.5 text-indigo-400" />
+                                <span>On-Demand URL Crawler</span>
+                              </label>
+                              <span className="text-[10px] text-slate-500 font-normal">Press Releases / Web</span>
+                            </div>
+
+                            <div>
+                              <span className="text-[10px] text-slate-400 block mb-1">Target Article or Announcement URL</span>
+                              <div className="flex gap-2">
+                                <input
+                                  type="url"
+                                  value={customScrapeUrl}
+                                  onChange={(e) => setCustomScrapeUrl(e.target.value)}
+                                  placeholder="https://www.defense.gov/News/Releases/..."
+                                  className="flex-1 bg-slate-900 border border-slate-700 text-slate-100 text-xs px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-indigo-500 placeholder-slate-600"
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={crawlingUrl}
+                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 shrink-0 shadow-2xs"
+                                >
+                                  <Search className="w-3.5 h-3.5" />
+                                  <span>{crawlingUrl ? "Crawling..." : "Crawl URL"}</span>
+                                </button>
+                              </div>
+                            </div>
+                          </form>
+
+                          {/* RECENT CRAWLS HISTORY SIDE-PANEL */}
+                          <div className="pt-2 border-t border-slate-800/80 flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                                <History className="w-3 h-3 text-indigo-400" />
+                                <span>Recent Crawls ({recentCrawls.length})</span>
+                              </span>
+                              <span className="text-[9px] text-slate-500 font-mono">Click to re-execute</span>
+                            </div>
+
+                            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
+                              {recentCrawls.slice(0, 5).map((item, idx) => (
+                                <div
+                                  key={idx}
+                                  onClick={() => handleScrapeCustomUrl(undefined, item.url)}
+                                  className="p-1.5 bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800/80 hover:border-indigo-500/50 rounded-lg transition-all cursor-pointer flex items-center justify-between group"
+                                  title={`Re-crawl: ${item.url}`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
+                                    <Globe className="w-3 h-3 text-indigo-400 shrink-0 group-hover:text-indigo-300" />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-[11px] font-semibold text-slate-200 truncate group-hover:text-white">
+                                        {item.title}
+                                      </div>
+                                      <div className="text-[9px] text-slate-400 truncate font-mono">
+                                        {item.domain} • <span className="text-slate-500">{item.url}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <span className="text-[9px] text-slate-500 font-mono">{item.timestamp}</span>
+                                    <button
+                                      type="button"
+                                      className="px-1.5 py-0.5 rounded bg-indigo-950/80 text-indigo-300 group-hover:bg-indigo-600 group-hover:text-white text-[9px] font-bold transition-all flex items-center gap-0.5"
+                                    >
+                                      <RefreshCw className="w-2.5 h-2.5" />
+                                      <span>Re-run</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </form>
-
-
+                        </div>
                       </div>
 
                       {/* SCRAPER MESSAGES */}
@@ -1640,6 +1870,28 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                                     Strength: {sig.strength}
                                   </span>
                                 </div>
+
+                                {sig.linkedEntity && (
+                                  <div className="mt-2.5 p-2 bg-slate-900 text-slate-200 rounded-lg border border-slate-700/80 text-[10px] flex items-center justify-between gap-2 flex-wrap">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-bold text-indigo-300 flex items-center gap-1">
+                                        <Link2 className="w-3 h-3 text-indigo-400" />
+                                        Entity: {sig.linkedEntity.canonicalEntity}
+                                      </span>
+                                      {sig.linkedEntity.tickerOrCik && (
+                                        <span className="text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700 font-mono text-[9px]">
+                                          {sig.linkedEntity.tickerOrCik}
+                                        </span>
+                                      )}
+                                      <span className="text-emerald-400 font-semibold bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800/80">
+                                        {Math.round(sig.linkedEntity.confidenceScore * 100)}% ({sig.linkedEntity.matchType})
+                                      </span>
+                                    </div>
+                                    <span className="text-slate-500 font-mono text-[9px]">
+                                      ID: {sig.linkedEntity.entityId}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
 
                               <button
@@ -2249,6 +2501,16 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                             {t.phase}
                           </span>
+                          {t.id === "t3" && (
+                            <button
+                              onClick={() => setActiveTab("nerstudio")}
+                              className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-md transition-all flex items-center gap-1 cursor-pointer"
+                              title="Launch Entity Extraction Model Training Studio"
+                            >
+                              <BrainCircuit className="w-3 h-3 text-purple-600" />
+                              <span>Open NER Studio</span>
+                            </button>
+                          )}
                         </div>
                         <h4 className="text-xs font-bold text-slate-800 mt-1">
                           {t.task}
@@ -2666,6 +2928,11 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
             </div>
           </div>
         )}
+
+        {/* TAB 4: ENTITY EXTRACTION (NER) MODEL TRAINING STUDIO */}
+        {activeTab === "nerstudio" && (
+          <EntityExtractionStudio />
+        )}
       </main>
 
       {/* FOOTER */}
@@ -2676,6 +2943,7 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
           </span>
           <div className="flex gap-4">
             <button onClick={() => setActiveTab("sandbox")} className="hover:text-slate-600">Sandbox</button>
+            <button onClick={() => setActiveTab("nerstudio")} className="hover:text-slate-600">NER Studio</button>
             <button onClick={() => setActiveTab("buildplan")} className="hover:text-slate-600">Build Plan</button>
             <button onClick={() => setActiveTab("architecture")} className="hover:text-slate-600">Architecture</button>
           </div>
@@ -2907,7 +3175,7 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                     SAM.gov Contract Opportunities API Key
                   </label>
                   <a
-                    href="https://sam.gov/data-services/"
+                    href="https://sam.gov/workspace/profile/account-details"
                     target="_blank"
                     rel="noreferrer"
                     className="text-[10px] text-indigo-600 hover:underline flex items-center gap-0.5 font-semibold"
@@ -2917,11 +3185,33 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                 </div>
                 <input
                   type="password"
-                  placeholder="e.g., sam_prod_key_xxxxxxxx"
+                  placeholder="e.g., SAM-007a9afa-a177-4e68-8a71-be3ad125e71f"
                   value={govKeys.samGovKey}
                   onChange={(e) => saveGovKeys({ ...govKeys, samGovKey: e.target.value })}
                   className="w-full rounded-lg border border-slate-200 p-2 text-xs font-mono focus:border-emerald-500 focus:ring-emerald-500"
                 />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+                    SAM.gov Unique Entity ID (UEI)
+                  </label>
+                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                    Uncle Robert Consulting Verified
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  placeholder="e.g., LX7PJGDDUUU1"
+                  value={govKeys.samUei}
+                  onChange={(e) => saveGovKeys({ ...govKeys, samUei: e.target.value.toUpperCase() })}
+                  className="w-full rounded-lg border border-slate-200 p-2 text-xs font-mono font-bold uppercase focus:border-emerald-500 focus:ring-emerald-500 bg-slate-50/50"
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">
+                  Entity ID for GSA / SAM.gov & USASpending federal award queries
+                </span>
               </div>
 
               <div>
