@@ -151,7 +151,7 @@ export const ApiDeveloperStudio: React.FC<ApiDeveloperStudioProps> = () => {
 
   // Credentials & Webhook State
   const [apiKey, setApiKey] = useState<string>(() => {
-    return localStorage.getItem("pred_intel_api_key") || "pred_live_sk_8f93a19b22e104c892";
+    return localStorage.getItem("pred_intel_api_key") || "pred_demo_key_8f93a19b22e104c892";
   });
   const [copiedKey, setCopiedKey] = useState<boolean>(false);
   const [webhookUrl, setWebhookUrl] = useState<string>("https://api.yourcompany.com/webhooks/signals");
@@ -243,7 +243,7 @@ export const ApiDeveloperStudio: React.FC<ApiDeveloperStudioProps> = () => {
 
   // Generate New API Key
   const handleRegenerateKey = () => {
-    const newKey = `pred_live_sk_${Math.random().toString(36).substring(2, 11)}${Math.random().toString(36).substring(2, 11)}`;
+    const newKey = `pred_demo_key_${Math.random().toString(36).substring(2, 11)}${Math.random().toString(36).substring(2, 11)}`;
     setApiKey(newKey);
     localStorage.setItem("pred_intel_api_key", newKey);
   };
