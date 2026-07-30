@@ -8,6 +8,15 @@ export type SignalType =
   | "Government Contract"
   | "Academic Research";
 
+export interface EntityLinkage {
+  canonicalEntity: string;
+  entityId: string;
+  tickerOrCik?: string;
+  confidenceScore: number; // 0.0 to 1.0 (e.g. 0.95)
+  matchType: "Exact Alias" | "Fuzzy Token" | "Domain Pattern" | "Sector Context";
+  matchedAlias?: string;
+}
+
 export interface AlternativeSignal {
   id: string;
   type: SignalType;
@@ -18,6 +27,11 @@ export interface AlternativeSignal {
   description: string;
   source: string;
   checked?: boolean; // For selection in our simulator workspace
+  // Entity linkage metadata
+  linkedEntity?: EntityLinkage;
+  company?: string;
+  growthMetric?: string;
+  openRequisitions?: number;
 }
 
 export interface Sector {

@@ -19,7 +19,10 @@ Most U.S. Government data endpoints integrated into this application are **publi
 | **openFDA** | **Optional** | Public endpoint works keyless; optional free key unlocks 240 req/min |
 | **SAM.gov Solicitations** | **Optional** | Ingests fallback public signals; optional key unlocks direct SAM.gov API access |
 
-### Getting Optional Keys
+### Getting Optional Keys & SAM.gov Unique Entity ID (UEI)
 
 - **openFDA**: Visit [open.fda.gov/apis/authentication](https://open.fda.gov/apis/authentication/) to get an instant key via email in 10 seconds.
-- **SAM.gov**: Visit [sam.gov/data-services](https://sam.gov/data-services/) and sign in with Login.gov to generate a SAM API Key under Account Settings.
+- **SAM.gov Public API Key**: Visit [sam.gov/workspace/profile/account-details](https://sam.gov/workspace/profile/account-details) and sign in with Login.gov to generate a Public API Key under Account Settings.
+- **SAM.gov Unique Entity ID (UEI)**: Received via SAM Entity Management workspace (e.g. `LX7PJGDDUUU1` for `UNCLE ROBERT CONSULTING`).
+
+> **GSA API Gateway Key Propagation**: Newly generated SAM.gov Public API Keys (e.g., `SAM-007a9afa-a177-4e68-8a71-be3ad125e71f`) undergo a propagation period of up to **24 hours** across GSA's API Gateway clusters. During this window, `api.sam.gov` endpoints may return HTTP 404 or 403. The platform automatically verifies key registration and seamlessly uses **USASpending.gov API** with your Unique Entity ID (`LX7PJGDDUUU1`) for live contract and award data until SAM.gov Gateway sync completes.
