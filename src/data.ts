@@ -324,7 +324,7 @@ export const TIMELINE_TASKS: TimelineTask[] = [
     task: "Entity Extraction (NER) Model Training & Evaluation (Fine-tuned Gemini Flash & spaCy entity pipeline)",
     phase: "Phase 2: Signal Engineering",
     weeks: [3, 4],
-    status: "In Progress",
+    status: "Completed",
     dependencies: ["t1", "t2"]
   },
   {
@@ -332,7 +332,7 @@ export const TIMELINE_TASKS: TimelineTask[] = [
     task: "Cross-domain Linkage & Knowledge Graph builder in BigQuery/Firestore",
     phase: "Phase 2: Signal Engineering",
     weeks: [4, 5],
-    status: "Planned",
+    status: "In Progress",
     dependencies: ["t2", "t3"]
   },
   {
