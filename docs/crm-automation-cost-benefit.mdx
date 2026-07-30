@@ -1,0 +1,29 @@
+---
+title: "CRM Integration Strategy: Low Cost, High Impact Analysis"
+description: "Evaluation of CRM connectivity patterns to prioritize automated plain-English briefing pushes and context-aware task generation over heavy OAuth infrastructure."
+---
+
+# CRM Connectivity & Workflow Automation Roadmap
+
+This document outlines the prioritization matrix for connecting the predictive business opportunity app directly into broker CRMs (e.g., Salesforce, HubSpot, DealCloud).
+
+---
+
+## 1. Feature Cost-Benefit Matrix
+
+| Feature | Engineering Cost | Business Benefit | Prioritization | Implementation Focus |
+| :--- | :---: | :---: | :---: | :--- |
+| **Context-Aware Task & Workflow Automation** | **LOW** | **HIGH** | 🥇 **Priority 1** | Plain-English briefing push, tailored icebreakers, and webhook task creation when signals cross confidence thresholds. |
+| **Dynamic Custom Field Mapping** | **LOW** | **MEDIUM** | 🥈 **Priority 2** | Pushing structured metadata (`AI Confidence Score`, `Primary Trigger`, `Lead Horizon`) into native CRM custom fields. |
+| **Automated Entity Resolution & Deduplication** | **MEDIUM** | **HIGH** | 🥉 **Priority 3** | Fuzzy string matching (company legal name, domain) against existing CRM accounts to prevent record duplication. |
+| **Bi-Directional API Connectors & OAuth** | **MEDIUM** | **HIGH** | Phase 4 | Full OAuth 2.0 handshake and token management for enterprise CRMs. |
+| **Modular Middleware & Pipeline Queue** | **HIGH** | **MEDIUM** | Phase 4 | Heavy queue management (Apache Airflow/Celery) for high-volume API rate limiting. |
+
+---
+
+## 2. Priority 1 Architecture: Context-Aware Task & Workflow Automation
+
+### Key Capabilities
+1. **Plain-English Briefings**: Converting raw data signals (patent clusters + NDEP permit approvals + hiring spikes) into 3-sentence executive summaries.
+2. **Suggested Icebreaker Generation**: Generating tailored 2-sentence outreach scripts directly for the broker.
+3. **Webhook Task Routing**: Dispatching structured JSON payloads to broker webhooks to auto-create high-priority follow-up tasks without requiring full OAuth app store listing overhead.
