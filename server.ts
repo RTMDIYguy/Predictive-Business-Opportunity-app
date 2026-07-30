@@ -1,14 +1,90 @@
 import express from "express";
 import path from "path";
+import dns from "dns";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
 
+// -------------------------------------------------------------
+// SSRF protection for any endpoint that fetches a client-supplied URL.
+// Blocks requests to private, loopback, link-local, and reserved ranges
+// (this covers cloud metadata endpoints like 169.254.169.254) by
+// resolving DNS ourselves and checking the resolved IP, not just the
+// hostname string, so a domain that resolves to an internal address
+// is caught too.
+// -------------------------------------------------------------
+
+function ipToLong(ip: string): number {
+  return ip.split(".").reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+}
+
+function isPrivateIPv4(ip: string): boolean {
+  const parts = ip.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((p) => Number.isNaN(p) || p < 0 || p > 255)) return true; // malformed -> treat as unsafe
+  const long = ipToLong(ip);
+  const inRange = (base: string, bits: number) => {
+    const baseLong = ipToLong(base);
+    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+    return (long & mask) === (baseLong & mask);
+  };
+  return (
+    inRange("0.0.0.0", 8) ||       // "this" network
+    inRange("10.0.0.0", 8) ||      // private
+    inRange("100.64.0.0", 10) ||   // carrier-grade NAT
+    inRange("127.0.0.0", 8) ||     // loopback
+    inRange("169.254.0.0", 16) ||  // link-local (cloud metadata server lives here)
+    inRange("172.16.0.0", 12) ||   // private
+    inRange("192.0.0.0", 24) ||    // IETF protocol assignments
+    inRange("192.0.2.0", 24) ||    // documentation (TEST-NET-1)
+    inRange("192.168.0.0", 16) ||  // private
+    inRange("198.18.0.0", 15) ||   // benchmarking
+    inRange("198.51.100.0", 24) || // documentation (TEST-NET-2)
+    inRange("203.0.113.0", 24) ||  // documentation (TEST-NET-3)
+    inRange("224.0.0.0", 4) ||     // multicast
+    inRange("240.0.0.0", 4)        // reserved
+  );
+}
+
+function isPrivateIPv6(ip: string): boolean {
+  const lower = ip.toLowerCase();
+  if (lower === "::1" || lower === "::") return true; // loopback / unspecified
+  if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // unique local fc00::/7
+  if (/^fe[89ab]/.test(lower)) return true; // link-local fe80::/10 (covers the metadata-equivalent range)
+  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) return isPrivateIPv4(mapped[1]); // IPv4-mapped IPv6 -> re-check as IPv4
+  return false;
+}
+
+function isPrivateOrReservedIP(ip: string): boolean {
+  return ip.includes(":") ? isPrivateIPv6(ip) : isPrivateIPv4(ip);
+}
+
+async function assertPublicUrl(targetUrl: string): Promise<void> {
+  const parsed = new URL(targetUrl);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Only http and https URLs are allowed.");
+  }
+  const hostname = parsed.hostname;
+  // Catch raw IP literals immediately (fast path, no DNS needed).
+  if (isPrivateOrReservedIP(hostname)) {
+    throw new Error("Requests to internal or private network addresses are not allowed.");
+  }
+  // Resolve DNS ourselves and check every returned address, so a public
+  // domain name that resolves to an internal IP (DNS rebinding) is caught
+  // rather than only the hostname string.
+  const lookups = await dns.promises.lookup(hostname, { all: true });
+  for (const { address } of lookups) {
+    if (isPrivateOrReservedIP(address)) {
+      throw new Error("Requests to internal or private network addresses are not allowed.");
+    }
+  }
+}
+
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
   app.use(express.json());
 
@@ -586,14 +662,33 @@ Based on our academic and industry research regarding predicting business announ
         return res.status(400).json({ error: "Please provide a valid target URL starting with http:// or https://" });
       }
 
+      try {
+        await assertPublicUrl(targetUrl);
+      } catch (blockErr: any) {
+        return res.status(400).json({ error: blockErr.message || "This URL is not allowed." });
+      }
+
       const logs: string[] = [];
       logs.push(`[URL_CRAWLER] Connecting to ${targetUrl}...`);
 
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FederalSignalAnalytics/1.0 (Web Scraping Engine)"
-        }
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      let response: Response;
+      try {
+        response = await fetch(targetUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FederalSignalAnalytics/1.0 (Web Scraping Engine)"
+          },
+          redirect: "manual", // don't auto-follow; a redirect to an internal address would bypass the check above
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+        return res.status(400).json({ error: "This URL redirects to another address. Please provide the direct, final URL instead." });
+      }
 
       if (!response.ok) {
         return res.status(400).json({ error: `Server returned HTTP ${response.status} when attempting to crawl ${targetUrl}` });
