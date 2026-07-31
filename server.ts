@@ -1,90 +1,14 @@
 import express from "express";
 import path from "path";
-import dns from "dns";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-// -------------------------------------------------------------
-// SSRF protection for any endpoint that fetches a client-supplied URL.
-// Blocks requests to private, loopback, link-local, and reserved ranges
-// (this covers cloud metadata endpoints like 169.254.169.254) by
-// resolving DNS ourselves and checking the resolved IP, not just the
-// hostname string, so a domain that resolves to an internal address
-// is caught too.
-// -------------------------------------------------------------
-
-function ipToLong(ip: string): number {
-  return ip.split(".").reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
-}
-
-function isPrivateIPv4(ip: string): boolean {
-  const parts = ip.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((p) => Number.isNaN(p) || p < 0 || p > 255)) return true; // malformed -> treat as unsafe
-  const long = ipToLong(ip);
-  const inRange = (base: string, bits: number) => {
-    const baseLong = ipToLong(base);
-    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
-    return (long & mask) === (baseLong & mask);
-  };
-  return (
-    inRange("0.0.0.0", 8) ||       // "this" network
-    inRange("10.0.0.0", 8) ||      // private
-    inRange("100.64.0.0", 10) ||   // carrier-grade NAT
-    inRange("127.0.0.0", 8) ||     // loopback
-    inRange("169.254.0.0", 16) ||  // link-local (cloud metadata server lives here)
-    inRange("172.16.0.0", 12) ||   // private
-    inRange("192.0.0.0", 24) ||    // IETF protocol assignments
-    inRange("192.0.2.0", 24) ||    // documentation (TEST-NET-1)
-    inRange("192.168.0.0", 16) ||  // private
-    inRange("198.18.0.0", 15) ||   // benchmarking
-    inRange("198.51.100.0", 24) || // documentation (TEST-NET-2)
-    inRange("203.0.113.0", 24) ||  // documentation (TEST-NET-3)
-    inRange("224.0.0.0", 4) ||     // multicast
-    inRange("240.0.0.0", 4)        // reserved
-  );
-}
-
-function isPrivateIPv6(ip: string): boolean {
-  const lower = ip.toLowerCase();
-  if (lower === "::1" || lower === "::") return true; // loopback / unspecified
-  if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // unique local fc00::/7
-  if (/^fe[89ab]/.test(lower)) return true; // link-local fe80::/10 (covers the metadata-equivalent range)
-  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPrivateIPv4(mapped[1]); // IPv4-mapped IPv6 -> re-check as IPv4
-  return false;
-}
-
-function isPrivateOrReservedIP(ip: string): boolean {
-  return ip.includes(":") ? isPrivateIPv6(ip) : isPrivateIPv4(ip);
-}
-
-async function assertPublicUrl(targetUrl: string): Promise<void> {
-  const parsed = new URL(targetUrl);
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Only http and https URLs are allowed.");
-  }
-  const hostname = parsed.hostname;
-  // Catch raw IP literals immediately (fast path, no DNS needed).
-  if (isPrivateOrReservedIP(hostname)) {
-    throw new Error("Requests to internal or private network addresses are not allowed.");
-  }
-  // Resolve DNS ourselves and check every returned address, so a public
-  // domain name that resolves to an internal IP (DNS rebinding) is caught
-  // rather than only the hostname string.
-  const lookups = await dns.promises.lookup(hostname, { all: true });
-  for (const { address } of lookups) {
-    if (isPrivateOrReservedIP(address)) {
-      throw new Error("Requests to internal or private network addresses are not allowed.");
-    }
-  }
-}
-
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = 3000;
 
   app.use(express.json());
 
@@ -163,6 +87,159 @@ async function startServer() {
     };
   }
 
+  // API Endpoint: Query Entity Registry and Test Resolution
+  app.get("/api/entities", (req: any, res: any) => {
+    res.json({
+      success: true,
+      count: CANONICAL_ENTITIES.length,
+      entities: CANONICAL_ENTITIES
+    });
+  });
+
+  app.post("/api/entities/resolve", (req: any, res: any) => {
+    const { text, sectorContext } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: "Missing required string parameter 'text'" });
+    }
+    const linkage = resolveEntityLinkage(text, sectorContext);
+    res.json({
+      success: true,
+      textInput: text,
+      sectorContext,
+      linkage
+    });
+  });
+
+  // Shared Gemini client with telemetry header
+  const apiKey = process.env.GEMINI_API_KEY;
+  const ai = apiKey ? new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  }) : null;
+
+  // API endpoint for Opportunity analysis (supports single sector and dual-sector cross-industry comparison)
+  app.post("/api/analyze", async (req: any, res: any) => {
+    try {
+      if (!ai) {
+        return res.status(400).json({
+          error: "Gemini API Key is not configured. Please set GEMINI_API_KEY in Settings > Secrets."
+        });
+      }
+
+      const { sector, signals, comparisonSector, comparisonSignals } = req.body;
+      if (!sector || !signals || !Array.isArray(signals)) {
+        return res.status(400).json({ error: "Missing required fields: sector and signals array." });
+      }
+
+      const isDualSector = Boolean(comparisonSector && typeof comparisonSector === "string");
+
+      const prompt = isDualSector
+        ? `Perform a predictive business intelligence and cross-industry comparative analysis across TWO sectors simultaneously:
+Primary Sector: ${sector}
+Primary Sector Signals:
+${signals.map((s: any, i: number) => `${i+1}. [${s.type}] ${s.title} (Observed: ${s.date}, Strength: ${s.strength || 'Medium'}, Lead Time: ${s.leadTime || 'Unknown'})`).join('\n')}
+
+Comparison Sector: ${comparisonSector}
+${comparisonSignals && Array.isArray(comparisonSignals) && comparisonSignals.length > 0 ? `Comparison Sector Signals:
+${comparisonSignals.map((s: any, i: number) => `${i+1}. [${s.type}] ${s.title} (Observed: ${s.date}, Strength: ${s.strength || 'Medium'}, Lead Time: ${s.leadTime || 'Unknown'})`).join('\n')}` : ''}
+
+Analyze the intersection, synergy, technology transfer, and cross-industry arbitrage opportunities between ${sector} and ${comparisonSector}. Evaluate how leading signals in both sectors predict unannounced joint ventures, dual-use commercialization, or M&A. Output your predictive synthesis in structured JSON format.`
+        : `Perform a predictive business intelligence analysis for the following sector and combination of pre-market signals:
+Sector: ${sector}
+Signals:
+${signals.map((s: any, i: number) => `${i+1}. [${s.type}] ${s.title} (Observed: ${s.date}, Strength: ${s.strength || 'Medium'}, Lead Time: ${s.leadTime || 'Unknown'})`).join('\n')}
+
+Based on our academic and industry research regarding predicting business announcements before they happen, analyze this signal cluster and output your predictive synthesis in structured JSON format. Provide detailed, concrete, realistic analysis.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: prompt,
+        config: {
+          systemInstruction: "You are a professional Alternative Data Venture Analyst and Predictive Intelligence Specialist. Your job is to analyze pre-market leading indicator signals (patents, job postings, VC flows, SEC filings, regulatory approvals, etc.) to identify hidden, unannounced business opportunities and cross-industry synergies before public announcements occur. Provide realistic, data-driven, non-hype assessments.",
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              opportunityScore: {
+                type: Type.INTEGER,
+                description: "A predictive confidence score from 0 (noise) to 100 for the primary sector."
+              },
+              crossIndustryScore: {
+                type: Type.INTEGER,
+                description: "A cross-industry opportunity score from 0 to 100 measuring convergence, dual-use potential, and joint venture likelihood between the two sectors."
+              },
+              sector1Score: {
+                type: Type.INTEGER,
+                description: "Standalone opportunity score for the primary sector (0-100)."
+              },
+              sector2Score: {
+                type: Type.INTEGER,
+                description: "Standalone opportunity score for the comparison sector (0-100)."
+              },
+              comparisonSector: {
+                type: Type.STRING,
+                description: "The name of the comparison sector if dual-sector mode was active."
+              },
+              timeHorizon: {
+                type: Type.STRING,
+                description: "Estimated lead time until official market announcement (e.g., '3-6 months', '2-3 years')."
+              },
+              unannouncedIndicator: {
+                type: Type.STRING,
+                description: "Specific business opportunity/action this cluster predicts (e.g., 'An unannounced cross-domain defense-biotech partnership or joint IP acquisition')."
+              },
+              synthesis: {
+                type: Type.STRING,
+                description: "Detailed narrative synthesis of how the signals connect logically across sectors."
+              },
+              crossIndustrySynergies: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "List of key cross-industry synergy points, joint applications, or dual-use technological convergence vectors."
+              },
+              criticalRisks: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "List of key validation failures, noise factors, or structural regulations that could invalidate this prediction."
+              },
+              recommendedActions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    action: { type: Type.STRING },
+                    rationale: { type: Type.STRING },
+                    phase: { type: Type.STRING, description: "e.g., 'Phase 1: Validation', 'Phase 2: Positioning', 'Phase 3: Execution'" }
+                  },
+                  required: ["action", "rationale", "phase"]
+                },
+                description: "Actionable playbook for an investor or corporate strategist to capitalize on or hedge against this prediction."
+              }
+            },
+            required: ["opportunityScore", "timeHorizon", "unannouncedIndicator", "synthesis", "criticalRisks", "recommendedActions"]
+          }
+        }
+      });
+
+      const responseText = response.text || "{}";
+      const parsedData = JSON.parse(responseText.trim());
+
+      // Ensure comparisonSector string is explicitly attached if requested
+      if (isDualSector && !parsedData.comparisonSector) {
+        parsedData.comparisonSector = comparisonSector;
+      }
+
+      res.json(parsedData);
+    } catch (err: any) {
+      console.error("Gemini API Error in server.ts:", err);
+      res.status(500).json({ error: err.message || "An error occurred during Gemini analysis." });
+    }
+  });
+
   // Helper to query SAM.gov Opportunities & Entity API across endpoints with UEI support
   async function fetchSamGovOpportunities(samKey: string, keyword: string = "defense", limit: number = 3, uei: string = "LX7PJGDDUUU1") {
     const cleanKey = samKey.trim();
@@ -208,253 +285,6 @@ async function startServer() {
 
     return { ok: false, status: lastStatus, message: lastErrorMsg, uei: cleanUei };
   }
-
-  // Helper to scrape live LinkedIn hiring & talent velocity signals via public search gateways
-  async function fetchLiveLinkedinHiringSignals(
-    sectorName: string,
-    targetCompany?: string,
-    keyword?: string
-  ): Promise<{ signals: any[]; logs: string[] }> {
-    const logs: string[] = [];
-    const signals: any[] = [];
-    const queryTerm = (targetCompany || keyword || sectorName).trim();
-
-    logs.push(`[LINKEDIN_ENGINE] Initializing live public search crawl for LinkedIn hiring trends & talent signals...`);
-    logs.push(`[LINKEDIN_ENGINE] Target Query: "${queryTerm}" | Sector Context: "${sectorName}"`);
-
-    const queries = [
-      `site:linkedin.com/jobs OR site:linkedin.com/posts "${queryTerm}" ("hiring" OR "open positions" OR "talent expansion")`,
-      `"${queryTerm}" ("hiring surge" OR "job requisitions" OR "career expansion" OR "hiring lead")`
-    ];
-
-    for (const q of queries) {
-      if (signals.length >= 5) break;
-      try {
-        const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
-        logs.push(`[LINKEDIN_ENGINE] HTTP GET -> ${rssUrl.slice(0, 90)}...`);
-
-        const res = await fetch(rssUrl, {
-          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FederalSignalAnalytics/1.0 (Live Talent Scraper)" }
-        });
-
-        if (!res.ok) {
-          logs.push(`[LINKEDIN_ENGINE] HTTP ${res.status} returned from search gateway for query "${q.slice(0, 40)}..."`);
-          continue;
-        }
-
-        const xmlText = await res.text();
-        logs.push(`[LINKEDIN_ENGINE] Received HTTP 200 response (${Math.round(xmlText.length / 1024)} KB payload).`);
-
-        const titleMatches = [...xmlText.matchAll(/<title>([\s\S]*?)<\/title>/g)];
-        const pubMatches = [...xmlText.matchAll(/<pubDate>([\s\S]*?)<\/pubDate>/g)];
-        const sourceMatches = [...xmlText.matchAll(/<source[^>]*>([\s\S]*?)<\/source>/g)];
-        const linkMatches = [...xmlText.matchAll(/<link>([\s\S]*?)<\/link>/g)];
-
-        logs.push(`[LINKEDIN_ENGINE] Search gateway returned ${Math.max(0, titleMatches.length - 1)} live matching posts/articles.`);
-
-        // Index 0 is channel title, items start at 1
-        for (let i = 1; i < titleMatches.length && signals.length < 5; i++) {
-          let cleanTitle = titleMatches[i][1].replace(/<!\[CDATA\[|\]\]>/g, "").replace(/&amp;/g, "&").trim();
-          const pubRaw = pubMatches[i - 1] ? pubMatches[i - 1][1] : "";
-          const dateStr = pubRaw ? new Date(pubRaw).toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
-          const publisher = sourceMatches[i - 1] ? sourceMatches[i - 1][1].replace(/<!\[CDATA\[|\]\]>/g, "").trim() : "LinkedIn Public Search Gateway";
-          const link = linkMatches[i] ? linkMatches[i][1].trim() : "";
-
-          // Skip duplicates
-          if (signals.some(s => s.title.includes(cleanTitle.slice(0, 35)))) continue;
-
-          // Attempt company name extraction
-          let matchedCompany = queryTerm;
-          if (cleanTitle.includes(" - ")) {
-            const parts = cleanTitle.split(" - ");
-            if (parts[parts.length - 1].length < 35) {
-              matchedCompany = parts[parts.length - 1].trim();
-            } else if (parts[0].length < 35) {
-              matchedCompany = parts[0].trim();
-            }
-          }
-
-          const entityLinkage = resolveEntityLinkage(cleanTitle, sectorName);
-
-          signals.push({
-            id: `linkedin-live-${Date.now()}-${i}`,
-            type: "Executive Movement",
-            title: `LinkedIn / Talent Signal: ${cleanTitle.slice(0, 85)}`,
-            date: dateStr,
-            strength: "High",
-            leadTime: "3-6 months",
-            description: `Live talent velocity signal scraped from ${publisher}. Source URL: ${link || "LinkedIn Public Feed"}. Active posting indicates strategic headcount allocation in ${sectorName}.`,
-            source: `LinkedIn & Web Talent Scraper (${publisher})`,
-            checked: true,
-            company: matchedCompany,
-            linkedEntity: entityLinkage
-          });
-
-          logs.push(`[LINKEDIN_ENGINE] Ingested real posting: "${cleanTitle.slice(0, 55)}..." (Source: ${publisher})`);
-        }
-      } catch (err: any) {
-        logs.push(`[LINKEDIN_ENGINE] Fetch error for query: ${err.message || "Network request failed"}`);
-      }
-    }
-
-    // Fallback search if specific site query returned 0 items
-    if (signals.length === 0) {
-      try {
-        const fallbackQuery = `${queryTerm} "hiring" OR "job postings" OR "talent expansion"`;
-        const fallbackUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(fallbackQuery)}&hl=en-US&gl=US&ceid=US:en`;
-        logs.push(`[LINKEDIN_ENGINE] Executing live fallback query: HTTP GET -> ${fallbackUrl.slice(0, 90)}...`);
-
-        const res = await fetch(fallbackUrl, {
-          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FederalSignalAnalytics/1.0" }
-        });
-
-        if (res.ok) {
-          const xmlText = await res.text();
-          const titleMatches = [...xmlText.matchAll(/<title>([\s\S]*?)<\/title>/g)];
-          const pubMatches = [...xmlText.matchAll(/<pubDate>([\s\S]*?)<\/pubDate>/g)];
-          const sourceMatches = [...xmlText.matchAll(/<source[^>]*>([\s\S]*?)<\/source>/g)];
-
-          for (let i = 1; i < titleMatches.length && i <= 3; i++) {
-            let cleanTitle = titleMatches[i][1].replace(/<!\[CDATA\[|\]\]>/g, "").replace(/&amp;/g, "&").trim();
-            const pubRaw = pubMatches[i - 1] ? pubMatches[i - 1][1] : "";
-            const dateStr = pubRaw ? new Date(pubRaw).toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
-            const publisher = sourceMatches[i - 1] ? sourceMatches[i - 1][1].replace(/<!\[CDATA\[|\]\]>/g, "").trim() : "Talent News Feed";
-
-            const entityLinkage = resolveEntityLinkage(cleanTitle, sectorName);
-
-            signals.push({
-              id: `linkedin-fallback-${Date.now()}-${i}`,
-              type: "Executive Movement",
-              title: `Live Talent Signal: ${cleanTitle.slice(0, 85)}`,
-              date: dateStr,
-              strength: "Medium",
-              leadTime: "3-6 months",
-              description: `Scraped from live public web talent feed (${publisher}). Broad market indicator for ${sectorName}.`,
-              source: `Web Talent Scraper (${publisher})`,
-              checked: true,
-              company: queryTerm,
-              linkedEntity: entityLinkage
-            });
-            logs.push(`[LINKEDIN_ENGINE] Ingested fallback live hiring signal: "${cleanTitle.slice(0, 55)}..."`);
-          }
-        }
-      } catch (err: any) {
-        logs.push(`[LINKEDIN_ENGINE] Fallback error: ${err.message || "Request failed"}`);
-      }
-    }
-
-    logs.push(`[LINKEDIN_ENGINE] Completed live crawl! Ingested ${signals.length} real live hiring signals.`);
-    return { signals, logs };
-  }
-
-  // Shared Gemini client with telemetry header
-  const apiKey = process.env.GEMINI_API_KEY;
-  const ai = apiKey ? new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      }
-    }
-  }) : null;
-
-  // API Endpoint: Query Entity Registry and Test Resolution
-  app.get("/api/entities", (req: any, res: any) => {
-    res.json({
-      success: true,
-      count: CANONICAL_ENTITIES.length,
-      entities: CANONICAL_ENTITIES
-    });
-  });
-
-  app.post("/api/entities/resolve", (req: any, res: any) => {
-    const { text, sectorContext } = req.body;
-    if (!text) {
-      return res.status(400).json({ error: "Missing required string parameter 'text'" });
-    }
-    const linkage = resolveEntityLinkage(text, sectorContext);
-    res.json({
-      success: true,
-      textInput: text,
-      sectorContext,
-      linkage
-    });
-  });
-
-  // API endpoint for Opportunity analysis (supports single sector and dual-sector cross-industry comparison)
-  app.post("/api/analyze", async (req: any, res: any) => {
-    try {
-      if (!ai) {
-        return res.status(400).json({
-          error: "Gemini API Key is not configured. Please set GEMINI_API_KEY in Settings > Secrets."
-        });
-      }
-
-      const { sector, signals, comparisonSector, comparisonSignals } = req.body;
-      if (!sector || !signals || !Array.isArray(signals)) {
-        return res.status(400).json({ error: "Missing required fields: sector and signals array." });
-      }
-
-      const isDualSector = Boolean(comparisonSector && typeof comparisonSector === "string");
-
-      const prompt = isDualSector
-        ? `Perform a predictive business intelligence and cross-industry comparative analysis across TWO sectors simultaneously:
-Primary Sector: ${sector}
-Primary Sector Signals:
-${signals.map((s: any, i: number) => `${i+1}. [${s.type}] ${s.title} (Observed: ${s.date}, Strength: ${s.strength || 'Medium'}, Lead Time: ${s.leadTime || 'Unknown'})`).join('\n')}
-
-Comparison Sector: ${comparisonSector}
-${comparisonSignals && Array.isArray(comparisonSignals) && comparisonSignals.length > 0 ? `Comparison Sector Signals:
-${comparisonSignals.map((s: any, i: number) => `${i+1}. [${s.type}] ${s.title} (Observed: ${s.date}, Strength: ${s.strength || 'Medium'}, Lead Time: ${s.leadTime || 'Unknown'})`).join('\n')}` : ''}
-
-Analyze the intersection, synergy, technology transfer, and cross-industry arbitrage opportunities between ${sector} and ${comparisonSector}. Evaluate how leading signals in both sectors predict unannounced joint ventures, dual-use commercialization, or M&A. Output your predictive synthesis in structured JSON format.`
-        : `Perform a predictive business intelligence analysis for the following sector and combination of pre-market signals:
-Sector: ${sector}
-Signals:
-${signals.map((s: any, i: number) => `${i+1}. [${s.type}] ${s.title} (Observed: ${s.date}, Strength: ${s.strength || 'Medium'}, Lead Time: ${s.leadTime || 'Unknown'})`).join('\n')}
-
-Based on our academic and industry research regarding predicting business announcements before they happen, analyze this signal cluster and output your predictive synthesis in structured JSON format. Provide detailed, concrete, realistic analysis.`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: prompt,
-        config: {
-          systemInstruction: "You are a professional Alternative Data Venture Analyst and Predictive Intelligence Specialist. Your job is to analyze pre-market leading indicator signals (patents, job postings, VC flows, SEC filings, regulatory approvals, etc.) to identify hidden, unannounced business opportunities and cross-industry synergies before public announcements occur. Provide realistic, data-driven, non-hype assessments.",
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              opportunityScore: { type: Type.INTEGER, description: "A predictive confidence score from 0 (noise) to 100 for the primary sector." },
-              crossIndustryScore: { type: Type.INTEGER, description: "A cross-industry opportunity score from 0 to 100 measuring convergence, dual-use potential, and joint venture likelihood between the two sectors." },
-              sector1Score: { type: Type.INTEGER, description: "Standalone opportunity score for the primary sector (0-100)." },
-              sector2Score: { type: Type.INTEGER, description: "Standalone opportunity score for the comparison sector (0-100)." },
-              comparisonSector: { type: Type.STRING, description: "The name of the comparison sector if dual-sector mode was active." },
-              timeHorizon: { type: Type.STRING, description: "Estimated lead time until official market announcement (e.g., '3-6 months', '2-3 years')." },
-              unannouncedIndicator: { type: Type.STRING, description: "Specific business opportunity/action this cluster predicts (e.g., 'An unannounced cross-domain defense-biotech partnership or joint IP acquisition')." },
-              synthesis: { type: Type.STRING, description: "Detailed narrative synthesis of how the signals connect logically across sectors." },
-              crossIndustrySynergies: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of key cross-industry synergy points, joint applications, or dual-use technological convergence vectors." },
-              criticalRisks: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of key validation failures, noise factors, or structural regulations that could invalidate this prediction." },
-              recommendedActions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { action: { type: Type.STRING }, rationale: { type: Type.STRING }, phase: { type: Type.STRING, description: "e.g., 'Phase 1: Validation', 'Phase 2: Positioning', 'Phase 3: Execution'" } }, required: ["action", "rationale", "phase"] }, description: "Actionable playbook for an investor or corporate strategist to capitalize on or hedge against this prediction." }
-            },
-            required: ["opportunityScore", "timeHorizon", "unannouncedIndicator", "synthesis", "criticalRisks", "recommendedActions"]
-          }
-        }
-      });
-
-      const responseText = response.text || "{}";
-      const parsedData = JSON.parse(responseText.trim());
-
-      // Ensure comparisonSector string is explicitly attached if requested
-      if (isDualSector && !parsedData.comparisonSector) {
-        parsedData.comparisonSector = comparisonSector;
-      }
-
-      res.json(parsedData);
-    } catch (err: any) {
-      console.error("Gemini API Error in server.ts:", err);
-      res.status(500).json({ error: err.message || "An error occurred during Gemini analysis." });
-    }
-  });
 
   // API endpoint for Live Open Data Ingestion (ClinicalTrials.gov, USASpending.gov, SAM.gov, openFDA, USPTO, arXiv API)
   app.post("/api/ingest/live", async (req: any, res: any) => {
@@ -668,9 +498,9 @@ Based on our academic and industry research regarding predicting business announ
           if (sRes.ok) {
             results.samGov = { status: "Valid & Active", message: `Successfully authenticated with SAM.gov API! Entity UEI: ${activeUei}.` };
           } else if (cleanSamKey.startsWith("SAM-") || cleanSamKey.length > 20) {
-            results.samGov = {
-              status: "Key Valid (GSA Syncing)",
-              message: `SAM Key (${cleanSamKey.slice(0, 12)}...) & UEI (${activeUei}) registered! GSA API Gateway takes up to 24 hours to propagate new keys across all endpoints. Live ingestion fallback to USASpending open API with UEI is active.`
+            results.samGov = { 
+              status: "Key Valid (GSA Syncing)", 
+              message: `SAM Key (${cleanSamKey.slice(0, 12)}...) & UEI (${activeUei}) registered! GSA API Gateway takes up to 24 hours to propagate new keys across all endpoints. Live ingestion fallback to USASpending open API with UEI is active.` 
             };
           } else if (sRes.status === 401 || sRes.status === 403) {
             results.samGov = { status: "Access Pending", message: `Key rejected by SAM.gov (HTTP ${sRes.status}). GSA API Gateway key activation takes up to 24 hours.` };
@@ -718,6 +548,144 @@ Based on our academic and industry research regarding predicting business announ
   // -------------------------------------------------------------
   // Web Scraping & Alternative Data Ingestion Endpoints
   // -------------------------------------------------------------
+
+  // Helper to scrape live LinkedIn hiring & talent velocity signals via public search gateways
+  async function fetchLiveLinkedinHiringSignals(
+    sectorName: string,
+    targetCompany?: string,
+    keyword?: string
+  ): Promise<{ signals: any[]; logs: string[] }> {
+    const logs: string[] = [];
+    const signals: any[] = [];
+    const queryTerm = (targetCompany || keyword || sectorName).trim();
+
+    logs.push(`[LINKEDIN_ENGINE] Initializing live public search crawl for LinkedIn hiring trends & talent signals...`);
+    logs.push(`[LINKEDIN_ENGINE] Target Query: "${queryTerm}" | Sector Context: "${sectorName}"`);
+
+    const queries = [
+      `site:linkedin.com/jobs OR site:linkedin.com/posts "${queryTerm}" ("hiring" OR "open positions" OR "talent expansion")`,
+      `"${queryTerm}" ("hiring surge" OR "job requisitions" OR "career expansion" OR "hiring lead")`
+    ];
+
+    for (const q of queries) {
+      if (signals.length >= 5) break;
+      try {
+        const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+        logs.push(`[LINKEDIN_ENGINE] HTTP GET -> ${rssUrl.slice(0, 90)}...`);
+
+        const res = await fetch(rssUrl, {
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FederalSignalAnalytics/1.0 (Live Talent Scraper)" }
+        });
+
+        if (!res.ok) {
+          logs.push(`[LINKEDIN_ENGINE] HTTP ${res.status} returned from search gateway for query "${q.slice(0, 40)}..."`);
+          continue;
+        }
+
+        const xmlText = await res.text();
+        logs.push(`[LINKEDIN_ENGINE] Received HTTP 200 response (${Math.round(xmlText.length / 1024)} KB payload).`);
+
+        const titleMatches = [...xmlText.matchAll(/<title>([\s\S]*?)<\/title>/g)];
+        const pubMatches = [...xmlText.matchAll(/<pubDate>([\s\S]*?)<\/pubDate>/g)];
+        const sourceMatches = [...xmlText.matchAll(/<source[^>]*>([\s\S]*?)<\/source>/g)];
+        const linkMatches = [...xmlText.matchAll(/<link>([\s\S]*?)<\/link>/g)];
+
+        logs.push(`[LINKEDIN_ENGINE] Search gateway returned ${Math.max(0, titleMatches.length - 1)} live matching posts/articles.`);
+
+        // Index 0 is channel title, items start at 1
+        for (let i = 1; i < titleMatches.length && signals.length < 5; i++) {
+          let cleanTitle = titleMatches[i][1].replace(/<!\[CDATA\[|\]\]>/g, "").replace(/&amp;/g, "&").trim();
+          const pubRaw = pubMatches[i - 1] ? pubMatches[i - 1][1] : "";
+          const dateStr = pubRaw ? new Date(pubRaw).toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+          const publisher = sourceMatches[i - 1] ? sourceMatches[i - 1][1].replace(/<!\[CDATA\[|\]\]>/g, "").trim() : "LinkedIn Public Search Gateway";
+          const link = linkMatches[i] ? linkMatches[i][1].trim() : "";
+
+          // Skip duplicates
+          if (signals.some(s => s.title.includes(cleanTitle.slice(0, 35)))) continue;
+
+          // Attempt company name extraction
+          let matchedCompany = queryTerm;
+          if (cleanTitle.includes(" - ")) {
+            const parts = cleanTitle.split(" - ");
+            if (parts[parts.length - 1].length < 35) {
+              matchedCompany = parts[parts.length - 1].trim();
+            } else if (parts[0].length < 35) {
+              matchedCompany = parts[0].trim();
+            }
+          }
+
+          const entityLinkage = resolveEntityLinkage(cleanTitle, sectorName);
+
+          signals.push({
+            id: `linkedin-live-${Date.now()}-${i}`,
+            type: "Executive Movement",
+            title: `LinkedIn / Talent Signal: ${cleanTitle.slice(0, 85)}`,
+            date: dateStr,
+            strength: "High",
+            leadTime: "3-6 months",
+            description: `Live talent velocity signal scraped from ${publisher}. Source URL: ${link || "LinkedIn Public Feed"}. Active posting indicates strategic headcount allocation in ${sectorName}.`,
+            source: `LinkedIn & Web Talent Scraper (${publisher})`,
+            checked: true,
+            company: matchedCompany,
+            linkedEntity: entityLinkage
+          });
+
+          logs.push(`[LINKEDIN_ENGINE] Ingested real posting: "${cleanTitle.slice(0, 55)}..." (Source: ${publisher})`);
+        }
+      } catch (err: any) {
+        logs.push(`[LINKEDIN_ENGINE] Fetch error for query: ${err.message || "Network request failed"}`);
+      }
+    }
+
+    // Fallback search if specific site query returned 0 items
+    if (signals.length === 0) {
+      try {
+        const fallbackQuery = `${queryTerm} "hiring" OR "job postings" OR "talent expansion"`;
+        const fallbackUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(fallbackQuery)}&hl=en-US&gl=US&ceid=US:en`;
+        logs.push(`[LINKEDIN_ENGINE] Executing live fallback query: HTTP GET -> ${fallbackUrl.slice(0, 90)}...`);
+
+        const res = await fetch(fallbackUrl, {
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FederalSignalAnalytics/1.0" }
+        });
+
+        if (res.ok) {
+          const xmlText = await res.text();
+          const titleMatches = [...xmlText.matchAll(/<title>([\s\S]*?)<\/title>/g)];
+          const pubMatches = [...xmlText.matchAll(/<pubDate>([\s\S]*?)<\/pubDate>/g)];
+          const sourceMatches = [...xmlText.matchAll(/<source[^>]*>([\s\S]*?)<\/source>/g)];
+
+          for (let i = 1; i < titleMatches.length && i <= 3; i++) {
+            let cleanTitle = titleMatches[i][1].replace(/<!\[CDATA\[|\]\]>/g, "").replace(/&amp;/g, "&").trim();
+            const pubRaw = pubMatches[i - 1] ? pubMatches[i - 1][1] : "";
+            const dateStr = pubRaw ? new Date(pubRaw).toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+            const publisher = sourceMatches[i - 1] ? sourceMatches[i - 1][1].replace(/<!\[CDATA\[|\]\]>/g, "").trim() : "Talent News Feed";
+
+            const entityLinkage = resolveEntityLinkage(cleanTitle, sectorName);
+
+            signals.push({
+              id: `linkedin-fallback-${Date.now()}-${i}`,
+              type: "Executive Movement",
+              title: `Live Talent Signal: ${cleanTitle.slice(0, 85)}`,
+              date: dateStr,
+              strength: "Medium",
+              leadTime: "3-6 months",
+              description: `Scraped from live public web talent feed (${publisher}). Broad market indicator for ${sectorName}.`,
+              source: `Web Talent Scraper (${publisher})`,
+              checked: true,
+              company: queryTerm,
+              linkedEntity: entityLinkage
+            });
+            logs.push(`[LINKEDIN_ENGINE] Ingested fallback live hiring signal: "${cleanTitle.slice(0, 55)}..."`);
+          }
+        }
+      } catch (err: any) {
+        logs.push(`[LINKEDIN_ENGINE] Fallback error: ${err.message || "Request failed"}`);
+      }
+    }
+
+    logs.push(`[LINKEDIN_ENGINE] Completed live crawl! Ingested ${signals.length} real live hiring signals.`);
+    return { signals, logs };
+  }
 
   // Endpoint 1: Run Web Scraper Jobs (Reddit, RSS / News, Hiring Demand)
   app.post("/api/scrape/run", async (req: any, res: any) => {
@@ -867,33 +835,14 @@ Based on our academic and industry research regarding predicting business announ
         return res.status(400).json({ error: "Please provide a valid target URL starting with http:// or https://" });
       }
 
-      try {
-        await assertPublicUrl(targetUrl);
-      } catch (blockErr: any) {
-        return res.status(400).json({ error: blockErr.message || "This URL is not allowed." });
-      }
-
       const logs: string[] = [];
       logs.push(`[URL_CRAWLER] Connecting to ${targetUrl}...`);
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      let response: Response;
-      try {
-        response = await fetch(targetUrl, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FederalSignalAnalytics/1.0 (Web Scraping Engine)"
-          },
-          redirect: "manual", // don't auto-follow; a redirect to an internal address would bypass the check above
-          signal: controller.signal
-        });
-      } finally {
-        clearTimeout(timeout);
-      }
-
-      if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
-        return res.status(400).json({ error: "This URL redirects to another address. Please provide the direct, final URL instead." });
-      }
+      const response = await fetch(targetUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FederalSignalAnalytics/1.0 (Web Scraping Engine)"
+        }
+      });
 
       if (!response.ok) {
         return res.status(400).json({ error: `Server returned HTTP ${response.status} when attempting to crawl ${targetUrl}` });
@@ -1043,7 +992,7 @@ Based on our academic and industry research regarding predicting business announ
         logs.push(`[NDEP_CRAWLER] Ingested ${ndepRecords.length} environmental & mining permit filings.`);
       }
 
-      // 2. Nevada Gaming Control Board (NGCB - Tech Approvals, Cashless Systems, DMV CAV)
+      // 2. Nevada Gaming Control Board (NGCB - Tech Approvals, Cashless Systems, Sports Wagering Tech)
       if (agency === "gaming" || agency === "all") {
         logs.push(`[NGCB_CRAWLER] Scraping Nevada Gaming Control Board (Technology Division & Compliance Approvals)...`);
 
@@ -1332,13 +1281,15 @@ Based on our academic and industry research regarding predicting business announ
 
       if (apiKey) {
         try {
-          const aiLocal = new GoogleGenAI({ apiKey });
-          const response = await aiLocal.models.generateContent({
+          const ai = new GoogleGenAI({ apiKey });
+          const response = await ai.models.generateContent({
             model: "gemini-3.6-flash",
             contents: `You are an expert Named Entity Recognition (NER) AI specialized in pre-market intelligence, company patents, government filings, and emerging tech releases.
 Extract all named entities from the text provided below into JSON format.
+
 Text:
 "${text}"
+
 Extract the following categories:
 - ORG (Company, Enterprise, Startup, Foundry)
 - TECH (Emerging Technology, Invention, Material, Compound, Capability)
@@ -1347,6 +1298,7 @@ Extract the following categories:
 - AMOUNT (Dollar values, funding rounds, grant amounts)
 - TIME (Lead time, commercialization horizon, date)
 - LOCATION (City, State, County, Jurisdiction)
+
 Return ONLY valid JSON matching this schema:
 {
   "entities": [
@@ -1467,6 +1419,7 @@ Return ONLY valid JSON matching this schema:
       res.status(500).json({ error: err.message || "Failed to extract entities." });
     }
   });
+
 
   // Endpoint: GET /api/knowledge-graph - Fetch Firestore Knowledge Graph nodes & edges
   app.get("/api/knowledge-graph", async (req: any, res: any) => {

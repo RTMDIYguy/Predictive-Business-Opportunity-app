@@ -55,16 +55,19 @@ import {
   Building2,
   Link2,
   BrainCircuit,
-  History
+  History,
+  BookOpen
 } from "lucide-react";
 import { SECTORS, COST_RESOURCES, TIMELINE_TASKS, INGESTION_RESOURCES } from "./data";
 import { Sector, AlternativeSignal, AnalysisResult, CostResource, TimelineTask } from "./types";
 import { EntityExtractionStudio } from "./components/EntityExtractionStudio";
 import { ApiDeveloperStudio } from "./components/ApiDeveloperStudio";
+import { CrmWorkflowStudio } from "./components/CrmWorkflowStudio";
+import { BrokerFieldGuide } from "./components/BrokerFieldGuide";
 
 export default function App() {
   // Navigation / Tabs
-  const [activeTab, setActiveTab] = useState<"sandbox" | "buildplan" | "architecture" | "nerstudio" | "apistudio">("sandbox");
+  const [activeTab, setActiveTab] = useState<"sandbox" | "buildplan" | "architecture" | "nerstudio" | "apistudio" | "crmstudio" | "fieldguide">("sandbox");
 
   // Sector Selection State
   const [selectedSector, setSelectedSector] = useState<Sector>(SECTORS[0]);
@@ -1149,7 +1152,31 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                 id="tab_apistudio"
               >
                 <Code className="w-4 h-4 text-indigo-500" />
-                API Studio (REST & GraphQL)
+                API Studio
+              </button>
+              <button
+                onClick={() => setActiveTab("crmstudio")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  activeTab === "crmstudio"
+                    ? "bg-indigo-900 text-white shadow-xs border border-indigo-700 font-bold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                id="tab_crmstudio"
+              >
+                <Zap className="w-4 h-4 text-amber-500" />
+                CRM & Workflows
+              </button>
+              <button
+                onClick={() => setActiveTab("fieldguide")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  activeTab === "fieldguide"
+                    ? "bg-amber-950 text-amber-200 shadow-xs border border-amber-600 font-bold"
+                    : "text-amber-700 hover:text-amber-900 bg-amber-50/60 hover:bg-amber-100/80 border border-amber-200/60"
+                }`}
+                id="tab_fieldguide"
+              >
+                <BookOpen className="w-4 h-4 text-amber-600" />
+                <span>Field Guide & Playbook</span>
               </button>
             </div>
           </div>
@@ -2951,6 +2978,16 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
         {activeTab === "apistudio" && (
           <ApiDeveloperStudio />
         )}
+
+        {/* TAB 6: CONTEXT-AWARE CRM TASK & WORKFLOW AUTOMATION STUDIO */}
+        {activeTab === "crmstudio" && (
+          <CrmWorkflowStudio />
+        )}
+
+        {/* TAB 7: NEVADA BROKER FIELD GUIDE & TACTICAL PLAYBOOK */}
+        {activeTab === "fieldguide" && (
+          <BrokerFieldGuide />
+        )}
       </main>
 
       {/* FOOTER */}
@@ -3161,12 +3198,17 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                 </div>
 
                 <div className="border-b border-slate-100 pb-2.5">
-                  <span className="font-bold text-slate-900 block mb-1 text-emerald-800">2. SAM.gov Federal Contract Key:</span>
-                  <ol className="list-decimal list-inside space-y-0.5 text-slate-600 pl-1">
-                    <li>Visit <a href="https://sam.gov/data-services/" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">sam.gov/data-services</a> or <a href="https://open.gsa.gov/api/get-opportunities-public-api/" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">open.gsa.gov/api/get-opportunities-public-api</a></li>
-                    <li>Sign in to <strong>SAM.gov</strong> with your <strong>Login.gov</strong> account.</li>
-                    <li>Go to your <strong>Profile / Account Settings</strong>, scroll to <strong>API Key</strong>, and click <strong>Generate API Key</strong>.</li>
+                  <span className="font-bold text-slate-900 block mb-1 text-emerald-800">2. SAM.gov / GSA API Key (Optional - 10 Seconds):</span>
+                  <p className="text-slate-600 mb-1.5 leading-relaxed">
+                    SAM.gov's main database allows file downloads, but to get a free API key instantly without waiting for account approval:
+                  </p>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-600 pl-1 mb-2">
+                    <li>Visit the official GSA API Portal: <a href="https://api.data.gov/signup/" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">api.data.gov/signup</a> or <a href="https://open.gsa.gov/api/get-opportunities-public-api/" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">open.gsa.gov/api/get-opportunities-public-api</a></li>
+                    <li>Enter your Name and Email address — your API Key is generated instantly on screen!</li>
                   </ol>
+                  <div className="p-2 bg-indigo-50 border border-indigo-200 rounded-lg text-[11px] text-indigo-900 font-semibold">
+                    💡 <strong>100% Optional:</strong> If you leave this blank, the platform automatically streams live federal opportunities and awards via USASpending.gov API, USPTO, and ClinicalTrials.gov with <strong>zero key required</strong>!
+                  </div>
                 </div>
 
                 <div className="border-b border-slate-100 pb-2.5">
@@ -3193,7 +3235,7 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                     SAM.gov Contract Opportunities API Key
                   </label>
                   <a
-                    href="https://sam.gov/workspace/profile/account-details"
+                    href="https://api.data.gov/signup/"
                     target="_blank"
                     rel="noreferrer"
                     className="text-[10px] text-indigo-600 hover:underline flex items-center gap-0.5 font-semibold"
