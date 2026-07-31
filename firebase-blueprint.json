@@ -1,0 +1,106 @@
+{
+  "collections": [
+    {
+      "id": "knowledge_nodes",
+      "documents": [
+        {
+          "id": "node_lithium_americas",
+          "name": "Lithium Americas Corp",
+          "type": "ORG",
+          "domain": "energy_materials",
+          "score": 98.4,
+          "degree": 6,
+          "attributes": {
+            "ticker": "LAC",
+            "marketCap": "$1.8B",
+            "hq": "Vancouver, Canada / Reno, NV"
+          },
+          "updatedAt": "2026-07-30T08:00:00Z"
+        },
+        {
+          "id": "node_thacker_pass",
+          "name": "Thacker Pass Phase II Expansion",
+          "type": "PROJECT",
+          "domain": "mining_permits",
+          "score": 94.2,
+          "degree": 5,
+          "attributes": {
+            "investmentAmount": "$420,000,000",
+            "permitId": "WPCC-2026-004",
+            "county": "Humboldt County, NV"
+          },
+          "updatedAt": "2026-07-30T08:00:00Z"
+        },
+        {
+          "id": "node_patent_us2026_0142",
+          "name": "USPTO Patent US2026-0142981: Continuous Clay Extraction",
+          "type": "PATENT",
+          "domain": "patents",
+          "score": 91.0,
+          "degree": 3,
+          "attributes": {
+            "patentNo": "US2026-0142981",
+            "filingDate": "2026-02-14",
+            "status": "Published Application"
+          },
+          "updatedAt": "2026-07-30T08:00:00Z"
+        },
+        {
+          "id": "node_grant_doe_sbir_2026",
+          "name": "DOE SBIR Grant DE-FOA-0003291: Battery Grade Refining",
+          "type": "GRANT",
+          "domain": "federal_grants",
+          "score": 96.5,
+          "degree": 4,
+          "attributes": {
+            "grantAmount": "$12,500,000",
+            "agency": "US Department of Energy",
+            "cfda": "81.086"
+          },
+          "updatedAt": "2026-07-30T08:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "knowledge_edges",
+      "documents": [
+        {
+          "id": "edge_lac_thacker",
+          "sourceNodeId": "node_lithium_americas",
+          "targetNodeId": "node_thacker_pass",
+          "relationType": "OPERATES_PROJECT",
+          "weight": 0.98,
+          "confidence": 0.99,
+          "sourceDomain": "energy_materials",
+          "targetDomain": "mining_permits",
+          "evidenceSnippet": "Lithium Americas Corp received WPCC-2026-004 permit for $420M Thacker Pass Phase II expansion.",
+          "updatedAt": "2026-07-30T08:00:00Z"
+        },
+        {
+          "id": "edge_lac_patent",
+          "sourceNodeId": "node_lithium_americas",
+          "targetNodeId": "node_patent_us2026_0142",
+          "relationType": "PATENT_FILED_BY",
+          "weight": 0.92,
+          "confidence": 0.95,
+          "sourceDomain": "energy_materials",
+          "targetDomain": "patents",
+          "evidenceSnippet": "USPTO filing lists Lithium Americas Corp as primary assignee for high-efficiency lithium extraction.",
+          "updatedAt": "2026-07-30T08:00:00Z"
+        },
+        {
+          "id": "edge_thacker_grant",
+          "sourceNodeId": "node_thacker_pass",
+          "targetNodeId": "node_grant_doe_sbir_2026",
+          "relationType": "BENEFICIARY_OF_GRANT",
+          "weight": 0.89,
+          "confidence": 0.91,
+          "sourceDomain": "mining_permits",
+          "targetDomain": "federal_grants",
+          "evidenceSnippet": "DOE awarded DE-FOA-0003291 matching funds directly tied to domestic lithium supply chain processing.",
+          "updatedAt": "2026-07-30T08:00:00Z"
+        }
+      ]
+    }
+  ]
+}

@@ -30,7 +30,17 @@ import {
   PlusCircle,
   ExternalLink,
   Upload,
-  PieChart
+  PieChart,
+  GitCompare,
+  Workflow,
+  Link2,
+  Search,
+  ZoomIn,
+  ZoomOut,
+  Eye,
+  Compass,
+  Info,
+  X
 } from "lucide-react";
 import {
   Radar,
@@ -74,8 +84,200 @@ interface ExtractedEntity {
 }
 
 export function EntityExtractionStudio() {
-  // Studio Active Mode: "training" | "inference" | "dataset"
-  const [activeStudioTab, setActiveStudioTab] = useState<"training" | "inference" | "dataset">("inference");
+  // Studio Active Mode: "training" | "inference" | "dataset" | "resolution"
+  const [activeStudioTab, setActiveStudioTab] = useState<"training" | "inference" | "dataset" | "resolution">("inference");
+
+  // Entity Resolution & Disambiguation Engine State
+  const [resolveInputText, setResolveInputText] = useState<string>("Anduril Corp Autonomous Swarm Systems");
+  const [resolveSectorContext, setResolveSectorContext] = useState<string>("Defense & Aerospace");
+  const [resolveResult, setResolveResult] = useState<any | null>(null);
+  const [isResolving, setIsResolving] = useState<boolean>(false);
+  const [canonicalEntities, setCanonicalEntities] = useState<any[]>([]);
+  const [entitySearchFilter, setEntitySearchFilter] = useState<string>("");
+
+  // Knowledge Graph & Cross-Domain Linkage State
+  const [graphNodes, setGraphNodes] = useState<any[]>([]);
+  const [graphEdges, setGraphEdges] = useState<any[]>([]);
+  const [graphMetrics, setGraphMetrics] = useState<any | null>(null);
+  const [isLoadingGraph, setIsLoadingGraph] = useState<boolean>(false);
+
+  // Multi-Hop Graph Traversal State
+  const [multiHopPath, setMultiHopPath] = useState<any[]>([]);
+  const [isTracingHop, setIsTracingHop] = useState<boolean>(false);
+
+  // BigQuery Distributed SQL Join & Firestore Sync State
+  const [isSyncingBigQuery, setIsSyncingBigQuery] = useState<boolean>(false);
+  const [bigquerySyncLogs, setBigquerySyncLogs] = useState<string[]>([]);
+  const [bqSyncMetrics, setBqSyncMetrics] = useState<any | null>(null);
+
+  // Automated Ingestion Graph Builder Engine State
+  const [isAutoIngesting, setIsAutoIngesting] = useState<boolean>(false);
+  const [autoIngestLogs, setAutoIngestLogs] = useState<string[]>([]);
+  const [autoIngestResults, setAutoIngestResults] = useState<any | null>(null);
+
+  // Interactive Knowledge Graph Studio UI Controls State
+  const [selectedGraphNodeId, setSelectedGraphNodeId] = useState<string | null>(null);
+  const [graphStudioMode, setGraphStudioMode] = useState<"canvas" | "triples" | "matrix">("canvas");
+  const [graphNodeTypeFilter, setGraphNodeTypeFilter] = useState<string>("ALL");
+  const [graphMinConfidence, setGraphMinConfidence] = useState<number>(0.7);
+  const [graphSearchTerm, setGraphSearchTerm] = useState<string>("");
+  const [canvasZoom, setCanvasZoom] = useState<number>(1);
+
+  // Load Entity Registry and Knowledge Graph when Tab Active
+  useEffect(() => {
+    if (activeStudioTab === "resolution") {
+      // Fetch Canonical Entities Directory
+      fetch("/api/entities")
+        .then(res => res.json())
+        .then(data => {
+          if (data.entities) setCanonicalEntities(data.entities);
+        })
+        .catch(err => console.error("Failed to load canonical entities:", err));
+
+      // Fetch Knowledge Graph Nodes & Edges
+      setIsLoadingGraph(true);
+      fetch("/api/knowledge-graph")
+        .then(res => res.json())
+        .then(data => {
+          if (data.nodes) setGraphNodes(data.nodes);
+          if (data.edges) setGraphEdges(data.edges);
+          if (data.metrics) setGraphMetrics(data.metrics);
+        })
+        .catch(err => console.error("Failed to load Knowledge Graph:", err))
+        .finally(() => setIsLoadingGraph(false));
+    }
+  }, [activeStudioTab]);
+
+  // Test Entity Disambiguation Handler
+  const handleResolveEntityText = async (textToTest?: string) => {
+    const text = textToTest || resolveInputText;
+    if (!text.trim()) return;
+
+    if (textToTest) setResolveInputText(textToTest);
+    setIsResolving(true);
+    try {
+      const res = await fetch("/api/entities/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, sectorContext: resolveSectorContext })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Disambiguation failed");
+      setResolveResult(data.linkage);
+    } catch (err: any) {
+      console.error("Entity Disambiguation Error:", err);
+    } finally {
+      setIsResolving(false);
+    }
+  };
+
+  // Run Multi-Hop Graph Traversal Handler
+  const handleRunMultiHopTraversal = async () => {
+    setIsTracingHop(true);
+    try {
+      const res = await fetch("/api/knowledge-graph/multi-hop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startNodeId: "node_lithium_americas",
+          endNodeId: "node_solicitation_darpa",
+          maxHops: 3
+        })
+      });
+      const data = await res.json();
+      if (data.path) {
+        setMultiHopPath(data.path);
+      }
+    } catch (err: any) {
+      console.error("Multi-Hop Traversal Error:", err);
+    } finally {
+      setIsTracingHop(false);
+    }
+  };
+
+  // Run BigQuery Distributed SQL Join & Firestore Sync Handler
+  const handleRunBigQuerySync = async () => {
+    setIsSyncingBigQuery(true);
+    setBigquerySyncLogs(["[INIT] Connecting to GCP BigQuery & Firestore Knowledge Graph Sync..."]);
+    try {
+      const res = await fetch("/api/bigquery/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dataset: "premarket_intel",
+          similarityThreshold: 0.85
+        })
+      });
+      const data = await res.json();
+      if (data.logs) setBigquerySyncLogs(data.logs);
+      setBqSyncMetrics({
+        bytesProcessed: data.bytesProcessed,
+        queryDurationMs: data.queryDurationMs,
+        triplesDiscovered: data.triplesDiscovered,
+        status: data.firestoreCommitStatus
+      });
+    } catch (err: any) {
+      console.error("BigQuery Sync Error:", err);
+      setBigquerySyncLogs(prev => [...prev, `[ERROR] ${err.message}`]);
+    } finally {
+      setIsSyncingBigQuery(false);
+    }
+  };
+
+  // Run Automated Graph Builder Engine Ingestion Handler
+  const handleRunAutoIngest = async () => {
+    setIsAutoIngesting(true);
+    setAutoIngestLogs(["[INIT] Triggering Continuous Automated Graph Builder Ingestion Pipeline..."]);
+    try {
+      const res = await fetch("/api/graph/auto-ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sector: resolveSectorContext,
+          autoCommitFirestore: true
+        })
+      });
+      const data = await res.json();
+      if (data.logs) setAutoIngestLogs(data.logs);
+      setAutoIngestResults(data);
+
+      // Append newly generated edges & nodes into view state
+      if (data.newNodes && data.newNodes.length > 0) {
+        setGraphNodes(prev => [...prev, ...data.newNodes.filter((nn: any) => !prev.some(p => p.id === nn.id))]);
+      }
+      if (data.newEdges && data.newEdges.length > 0) {
+        setGraphEdges(prev => [...prev, ...data.newEdges.filter((ne: any) => !prev.some(p => p.id === ne.id))]);
+      }
+      if (data.updatedGraphMetrics) {
+        setGraphMetrics(data.updatedGraphMetrics);
+      }
+    } catch (err: any) {
+      console.error("Auto Ingestion Error:", err);
+      setAutoIngestLogs(prev => [...prev, `[ERROR] ${err.message}`]);
+    } finally {
+      setIsAutoIngesting(false);
+    }
+  };
+
+  // Run Cron Scheduler Ingestion Simulation Handler
+  const handleRunCronScheduler = async () => {
+    setIsAutoIngesting(true);
+    setAutoIngestLogs(["[CRON_TRIGGER] Firing Cloud Scheduler Job '0 */1 * * *'..."]);
+    try {
+      const res = await fetch("/api/graph/cron-ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cronSchedule: "0 */1 * * *" })
+      });
+      const data = await res.json();
+      if (data.logs) setAutoIngestLogs(data.logs);
+    } catch (err: any) {
+      console.error("Cron Ingestion Error:", err);
+      setAutoIngestLogs(prev => [...prev, `[ERROR] ${err.message}`]);
+    } finally {
+      setIsAutoIngesting(false);
+    }
+  };
 
   // Training Form & Batch Fine-Tuning State
   const [modelType, setModelType] = useState<"gemini-flash-fewshot" | "spacy-ner-pipeline">("gemini-flash-fewshot");
@@ -461,6 +663,17 @@ export function EntityExtractionStudio() {
           >
             <Database className="w-3.5 h-3.5" />
             <span>Annotated Dataset ({trainingSamples.length})</span>
+          </button>
+          <button
+            onClick={() => setActiveStudioTab("resolution")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeStudioTab === "resolution"
+                ? "bg-indigo-600 text-white shadow-sm"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <GitCompare className="w-3.5 h-3.5" />
+            <span>Entity Resolution & Knowledge Graph</span>
           </button>
         </div>
       </div>
@@ -1177,6 +1390,852 @@ export function EntityExtractionStudio() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* VIEW 4: ENTITY RESOLUTION & CROSS-DOMAIN KNOWLEDGE GRAPH PIPELINE */}
+      {activeStudioTab === "resolution" && (
+        <div className="flex flex-col gap-6">
+
+          {/* TOP METRICS & DISAMBIGUATION SECTION */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+            {/* LEFT: LIVE DISAMBIGUATION TESTER (5 cols) */}
+            <div className="lg:col-span-5 bg-slate-950 p-5 rounded-xl border border-slate-800 flex flex-col justify-between gap-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <GitCompare className="w-4 h-4 text-indigo-400" />
+                    <span>Entity Disambiguation Engine</span>
+                  </h3>
+                  <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/30">
+                    Live Fuzzy & Alias Matcher
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Test alias resolution against canonical corporate entities, SEC CIK registry, ticker symbols, and agency abbreviations.
+                </p>
+
+                <div className="space-y-2.5 pt-1">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Raw Entity / Alias Text:</label>
+                    <input
+                      type="text"
+                      value={resolveInputText}
+                      onChange={(e) => setResolveInputText(e.target.value)}
+                      placeholder="e.g. Anduril Corp, PLTR, MRNA, ASML Litho, NDEP"
+                      className="w-full bg-slate-900 border border-slate-800 text-slate-100 text-xs p-2.5 rounded-lg focus:outline-none focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Domain Context Filter:</label>
+                    <select
+                      value={resolveSectorContext}
+                      onChange={(e) => setResolveSectorContext(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 text-slate-100 text-xs p-2 rounded-lg focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="Defense & Aerospace">Defense & Aerospace</option>
+                      <option value="Biotech & Gene Therapy">Biotech & Gene Therapy</option>
+                      <option value="Semiconductors & Nanotech">Semiconductors & Nanotech</option>
+                      <option value="Quantum & Advanced AI">Quantum & Advanced AI</option>
+                      <option value="Clean Energy & Fusion">Clean Energy & Fusion</option>
+                    </select>
+                  </div>
+
+                  {/* Preset Buttons */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                    <span className="text-[10px] text-slate-400 font-semibold">Presets:</span>
+                    <button
+                      onClick={() => handleResolveEntityText("PLTR")}
+                      className="px-2 py-0.5 text-[10px] font-bold bg-slate-900 hover:bg-slate-800 text-indigo-300 rounded border border-indigo-500/30 cursor-pointer"
+                    >
+                      PLTR
+                    </button>
+                    <button
+                      onClick={() => handleResolveEntityText("Anduril Defense")}
+                      className="px-2 py-0.5 text-[10px] font-bold bg-slate-900 hover:bg-slate-800 text-sky-300 rounded border border-sky-500/30 cursor-pointer"
+                    >
+                      Anduril Defense
+                    </button>
+                    <button
+                      onClick={() => handleResolveEntityText("Moderna Therapeutics")}
+                      className="px-2 py-0.5 text-[10px] font-bold bg-slate-900 hover:bg-slate-800 text-purple-300 rounded border border-purple-500/30 cursor-pointer"
+                    >
+                      Moderna Tx
+                    </button>
+                    <button
+                      onClick={() => handleResolveEntityText("ASML Lithography")}
+                      className="px-2 py-0.5 text-[10px] font-bold bg-slate-900 hover:bg-slate-800 text-amber-300 rounded border border-amber-500/30 cursor-pointer"
+                    >
+                      ASML Litho
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleResolveEntityText()}
+                  disabled={isResolving}
+                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-2"
+                >
+                  <Play className={`w-3.5 h-3.5 ${isResolving ? "animate-spin" : "fill-current"}`} />
+                  <span>{isResolving ? "Resolving Linkage..." : "Resolve Entity Linkage"}</span>
+                </button>
+              </div>
+
+              {/* RESOLUTION RESULT CARD */}
+              {resolveResult && (
+                <div className="p-3.5 bg-indigo-950/60 border border-indigo-500/50 rounded-xl space-y-2 animate-fadeIn">
+                  <div className="flex items-center justify-between text-xs font-bold text-white">
+                    <span className="flex items-center gap-1.5 text-emerald-400">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{resolveResult.canonicalEntity}</span>
+                    </span>
+                    <span className="px-2 py-0.5 text-[10px] font-bold bg-indigo-900/90 text-indigo-200 rounded border border-indigo-500/40 font-mono">
+                      {resolveResult.matchType} Match
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300 pt-1">
+                    <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                      <span className="text-slate-500 block">Canonical ID:</span>
+                      <strong className="font-mono text-indigo-300">{resolveResult.entityId}</strong>
+                    </div>
+                    <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                      <span className="text-slate-500 block">Confidence Score:</span>
+                      <strong className="font-mono text-emerald-400">{(resolveResult.confidenceScore * 100).toFixed(0)}%</strong>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-slate-300 bg-slate-900/90 p-2 rounded border border-slate-800 flex justify-between items-center">
+                    <span>Ticker / CIK Mapping:</span>
+                    <strong className="font-mono text-amber-300">{resolveResult.tickerOrCik}</strong>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT: CANONICAL ENTITIES DIRECTORY (7 cols) */}
+            <div className="lg:col-span-7 bg-slate-950 p-5 rounded-xl border border-slate-800 flex flex-col justify-between gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-3 gap-2">
+                <div>
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-indigo-400" />
+                    <span>Canonical Entity Registry ({canonicalEntities.length})</span>
+                  </h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Verified enterprise profiles with aliases, SEC CIKs, and domain sectors.
+                  </p>
+                </div>
+
+                <div className="relative w-full sm:w-48">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    value={entitySearchFilter}
+                    onChange={(e) => setEntitySearchFilter(e.target.value)}
+                    placeholder="Search entities..."
+                    className="w-full bg-slate-900 border border-slate-800 text-slate-200 text-xs pl-8 pr-2 py-1.5 rounded-lg focus:outline-none focus:border-indigo-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* GRID OF CANONICAL ENTITIES */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-80 overflow-y-auto pr-1">
+                {canonicalEntities
+                  .filter(ent => {
+                    if (!entitySearchFilter.trim()) return true;
+                    const q = entitySearchFilter.toLowerCase();
+                    return ent.name.toLowerCase().includes(q) ||
+                           ent.sector.toLowerCase().includes(q) ||
+                           (ent.aliases && ent.aliases.some((a: string) => a.toLowerCase().includes(q)));
+                  })
+                  .map((ent) => (
+                    <div key={ent.id} className="p-3 bg-slate-900/90 border border-slate-800 hover:border-indigo-500/50 rounded-xl flex flex-col justify-between gap-2 transition-all">
+                      <div className="flex items-start justify-between gap-1">
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-100">{ent.name}</h4>
+                          <span className="text-[9px] font-extrabold text-indigo-400 font-mono block mt-0.5">{ent.sector}</span>
+                        </div>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-amber-300 font-mono shrink-0">
+                          {ent.tickerOrCik ? ent.tickerOrCik.split("/")[0] : "UNLISTED"}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-800/80">
+                        <span className="text-[9px] text-slate-500 font-mono self-center">Aliases:</span>
+                        {ent.aliases?.map((alias: string, aIdx: number) => (
+                          <button
+                            key={aIdx}
+                            onClick={() => handleResolveEntityText(alias)}
+                            className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-indigo-500/50 cursor-pointer"
+                            title="Click to test alias resolution"
+                          >
+                            {alias}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+          </div>
+
+          {/* BOTTOM SECTION: CROSS-DOMAIN KNOWLEDGE GRAPH & MULTI-HOP LINKAGES */}
+          <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 flex flex-col gap-5">
+            
+            {/* HEADER & METRICS BAR */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800 pb-3 gap-3">
+              <div>
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Workflow className="w-4 h-4 text-purple-400" />
+                  <span>Cross-Domain Knowledge Graph & Relationship Pipeline</span>
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Extracted directed triples (Entity A &rarr; Relation &rarr; Entity B) synchronized between BigQuery and Firestore.
+                </p>
+              </div>
+
+              {graphMetrics && (
+                <div className="flex items-center gap-2 text-[10px] font-mono font-bold flex-wrap">
+                  <span className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-indigo-300">
+                    Nodes: {graphNodes.length}
+                  </span>
+                  <span className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-emerald-300">
+                    Edges: {graphEdges.length}
+                  </span>
+                  <span className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-amber-300">
+                    Density: {graphMetrics.graphDensity}
+                  </span>
+                  <span className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-purple-300">
+                    Cross Triples: {graphMetrics.crossDomainTriples}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* ACTION PIPELINE BUTTONS & TRAVERSAL SIMULATION */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              
+              {/* BUTTON 1: RUN MULTI-HOP TRAVERSAL */}
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex flex-col justify-between gap-3">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Link2 className="w-4 h-4 text-indigo-400" />
+                      <span>Multi-Hop Graph Traversal</span>
+                    </h4>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/30">
+                      3-Hop Vector
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                    Traces hidden cross-domain paths linking commercial mining permits through DOE grants to DARPA defense solicitations.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleRunMultiHopTraversal}
+                  disabled={isTracingHop}
+                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Play className={`w-3.5 h-3.5 ${isTracingHop ? "animate-spin" : "fill-current"}`} />
+                  <span>{isTracingHop ? "Tracing Path..." : "Simulate 3-Hop Traversal"}</span>
+                </button>
+              </div>
+
+              {/* BUTTON 2: BIGQUERY DISTRIBUTED SQL JOIN & FIRESTORE SYNC */}
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex flex-col justify-between gap-3">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Database className="w-4 h-4 text-emerald-400" />
+                      <span>BigQuery ETL & Firestore Sync</span>
+                    </h4>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
+                      Distributed SQL
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                    Executes BigQuery SQL joins across patents, grants, and NDEP permits, syncing new triples to Firestore.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleRunBigQuerySync}
+                  disabled={isSyncingBigQuery}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingBigQuery ? "animate-spin" : ""}`} />
+                  <span>{isSyncingBigQuery ? "Executing ETL..." : "Run BigQuery ETL Sync"}</span>
+                </button>
+              </div>
+
+              {/* BUTTON 3: AUTOMATED GRAPH BUILDER & REAL-TIME INGESTION PIPELINE */}
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex flex-col justify-between gap-3">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>Auto Graph Ingestion Engine</span>
+                    </h4>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500/30">
+                      Real-time Ingest
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                    Continuously ingests unstructured signal feeds, extracts entities & triples, and auto-commits directly to Firestore.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleRunAutoIngest}
+                    disabled={isAutoIngesting}
+                    className="flex-1 px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Play className={`w-3.5 h-3.5 ${isAutoIngesting ? "animate-spin" : "fill-current"}`} />
+                    <span>{isAutoIngesting ? "Ingesting..." : "Run Auto Ingestion"}</span>
+                  </button>
+                  <button
+                    onClick={handleRunCronScheduler}
+                    disabled={isAutoIngesting}
+                    className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-slate-700 cursor-pointer"
+                    title="Simulate Cloud Scheduler Cron"
+                  >
+                    Cron
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            {/* AUTOMATED INGESTION EXECUTION LOGS TERMINAL */}
+            {autoIngestLogs.length > 0 && (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-2 font-mono text-[11px] animate-fadeIn">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2 text-slate-300 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Graph Builder Ingestion Pipeline Logs</span>
+                  </span>
+                  {autoIngestResults && (
+                    <span className="text-[10px] text-amber-300">
+                      Ingested: {autoIngestResults.ingestedSignalCount} Signals | Nodes: +{autoIngestResults.nodesCreated} | Edges: +{autoIngestResults.edgesCreated}
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1 max-h-36 overflow-y-auto text-slate-400">
+                  {autoIngestLogs.map((log, lIdx) => (
+                    <div key={lIdx} className="leading-relaxed text-amber-300/90">
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* MULTI-HOP TRAVERSAL PATH DISPLAY */}
+            {multiHopPath.length > 0 && (
+              <div className="p-4 bg-indigo-950/40 border border-indigo-500/40 rounded-xl space-y-3 animate-fadeIn">
+                <div className="flex items-center justify-between text-xs font-bold text-indigo-200 border-b border-indigo-500/30 pb-2">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-indigo-400" />
+                    <span>Discovered Multi-Hop Cross-Domain Traversal Path</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-mono">4 Connected Hops</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
+                  {multiHopPath.map((step, sIdx) => (
+                    <div key={sIdx} className="p-3 bg-slate-900 border border-slate-800 rounded-lg flex flex-col justify-between gap-1.5 relative">
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="font-extrabold text-indigo-400">Hop {step.hop}</span>
+                        <span className="text-slate-500">{step.domain}</span>
+                      </div>
+                      <div className="text-xs font-bold text-slate-100">{step.node}</div>
+                      {step.relation && (
+                        <div className="text-[9px] font-extrabold text-amber-300 font-mono bg-slate-950 p-1 rounded border border-slate-800 text-center">
+                          &rarr; {step.relation}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* BIGQUERY EXECUTION LOGS TERMINAL */}
+            {bigquerySyncLogs.length > 0 && (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-2 font-mono text-[11px] animate-fadeIn">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2 text-slate-300 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>BigQuery ETL & Firestore Sync Execution Logs</span>
+                  </span>
+                  {bqSyncMetrics && (
+                    <span className="text-[10px] text-emerald-400">
+                      Processed: {bqSyncMetrics.bytesProcessed} ({bqSyncMetrics.queryDurationMs}ms)
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1 max-h-36 overflow-y-auto text-slate-400">
+                  {bigquerySyncLogs.map((log, lIdx) => (
+                    <div key={lIdx} className="leading-relaxed text-emerald-300/90">
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* INTERACTIVE KNOWLEDGE GRAPH STUDIO TOOLBAR & CONTROLS */}
+            <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                {/* View Mode Switcher */}
+                <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                  <button
+                    onClick={() => setGraphStudioMode("canvas")}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                      graphStudioMode === "canvas" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    <Workflow className="w-3.5 h-3.5" />
+                    <span>Visual Network Canvas</span>
+                  </button>
+                  <button
+                    onClick={() => setGraphStudioMode("triples")}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                      graphStudioMode === "triples" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Triples Feed</span>
+                  </button>
+                  <button
+                    onClick={() => setGraphStudioMode("matrix")}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                      graphStudioMode === "matrix" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    <span>Adjacency Matrix</span>
+                  </button>
+                </div>
+
+                {/* Search & Confidence Slider */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="relative w-44">
+                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
+                    <input
+                      type="text"
+                      value={graphSearchTerm}
+                      onChange={(e) => setGraphSearchTerm(e.target.value)}
+                      placeholder="Filter graph nodes..."
+                      className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs pl-8 pr-2 py-1.5 rounded-lg focus:outline-none focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-xs font-mono">
+                    <span className="text-slate-400 text-[10px]">Min Conf:</span>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="0.95"
+                      step="0.05"
+                      value={graphMinConfidence}
+                      onChange={(e) => setGraphMinConfidence(parseFloat(e.target.value))}
+                      className="w-20 accent-indigo-500 cursor-pointer"
+                    />
+                    <span className="text-indigo-400 font-bold">{Math.round(graphMinConfidence * 100)}%</span>
+                  </div>
+
+                  {graphStudioMode === "canvas" && (
+                    <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+                      <button
+                        onClick={() => setCanvasZoom(prev => Math.max(0.7, prev - 0.1))}
+                        className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                        title="Zoom Out"
+                      >
+                        <ZoomOut className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="text-[10px] font-mono text-slate-400 px-1">{Math.round(canvasZoom * 100)}%</span>
+                      <button
+                        onClick={() => setCanvasZoom(prev => Math.min(1.5, prev + 0.1))}
+                        className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                        title="Zoom In"
+                      >
+                        <ZoomIn className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Entity Type Filter Bar */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-800/80">
+                <span className="text-[10px] text-slate-400 font-mono font-bold mr-1">Node Domain:</span>
+                {["ALL", "ORG", "PATENT", "PROJECT", "SOLICITATION", "GRANT", "PERMIT"].map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setGraphNodeTypeFilter(type)}
+                    className={`px-2 py-0.5 text-[10px] font-bold rounded font-mono transition-all cursor-pointer ${
+                      graphNodeTypeFilter === type
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800"
+                    }`}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* VIEW 1: VISUAL NETWORK CANVAS (SVG GRAPH MAP) */}
+            {graphStudioMode === "canvas" && (() => {
+              const filteredNodes = graphNodes.filter(node => {
+                if (graphNodeTypeFilter !== "ALL" && node.type !== graphNodeTypeFilter) return false;
+                if (graphSearchTerm && !node.name.toLowerCase().includes(graphSearchTerm.toLowerCase())) return false;
+                return true;
+              });
+
+              const filteredEdges = graphEdges.filter(edge => {
+                if (edge.confidence < graphMinConfidence) return false;
+                const srcValid = filteredNodes.some(n => n.id === edge.sourceNodeId);
+                const tgtValid = filteredNodes.some(n => n.id === edge.targetNodeId);
+                return srcValid && tgtValid;
+              });
+
+              const canvasWidth = 840;
+              const canvasHeight = 440;
+              const centerX = canvasWidth / 2;
+              const centerY = canvasHeight / 2;
+              const radius = 175;
+
+              const nodePosMap = new Map<string, { x: number; y: number; node: any }>();
+              filteredNodes.forEach((node, idx) => {
+                const angle = (idx / Math.max(1, filteredNodes.length)) * 2 * Math.PI - Math.PI / 2;
+                const x = centerX + radius * Math.cos(angle);
+                const y = centerY + radius * Math.sin(angle);
+                nodePosMap.set(node.id, { x, y, node });
+              });
+
+              const selectedNodeObj = graphNodes.find(n => n.id === selectedGraphNodeId);
+              const connectedEdges = filteredEdges.filter(e => e.sourceNodeId === selectedGraphNodeId || e.targetNodeId === selectedGraphNodeId);
+
+              return (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                  {/* CANVAS CONTAINER (8 cols or 12 cols if no selection) */}
+                  <div className={`${selectedGraphNodeId ? "lg:col-span-8" : "lg:col-span-12"} bg-slate-950 p-4 rounded-xl border border-slate-800 relative overflow-hidden flex flex-col justify-between min-h-[460px]`}>
+                    
+                    {/* SVG CANVAS */}
+                    <div className="w-full h-full flex items-center justify-center overflow-auto">
+                      <svg
+                        viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+                        className="w-full max-w-[840px] h-[420px] transition-transform duration-300"
+                        style={{ transform: `scale(${canvasZoom})` }}
+                      >
+                        <defs>
+                          <marker id="arrow" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#818cf8" />
+                          </marker>
+                          <marker id="arrow-active" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b" />
+                          </marker>
+                        </defs>
+
+                        {/* DRAW EDGES / CONNECTIONS */}
+                        {filteredEdges.map((edge) => {
+                          const srcPos = nodePosMap.get(edge.sourceNodeId);
+                          const tgtPos = nodePosMap.get(edge.targetNodeId);
+                          if (!srcPos || !tgtPos) return null;
+
+                          const isConnected = selectedGraphNodeId === edge.sourceNodeId || selectedGraphNodeId === edge.targetNodeId;
+                          const isDimmed = selectedGraphNodeId && !isConnected;
+
+                          return (
+                            <g key={edge.id} className="transition-opacity duration-300" opacity={isDimmed ? 0.2 : 1}>
+                              <line
+                                x1={srcPos.x}
+                                y1={srcPos.y}
+                                x2={tgtPos.x}
+                                y2={tgtPos.y}
+                                stroke={isConnected ? "#f59e0b" : "#475569"}
+                                strokeWidth={isConnected ? 2.5 : 1.5}
+                                strokeDasharray={isConnected ? "none" : "3 3"}
+                                markerEnd={isConnected ? "url(#arrow-active)" : "url(#arrow)"}
+                              />
+                              {/* Edge Label on Midpoint */}
+                              <text
+                                x={(srcPos.x + tgtPos.x) / 2}
+                                y={(srcPos.y + tgtPos.y) / 2 - 4}
+                                fill={isConnected ? "#fef08a" : "#94a3b8"}
+                                fontSize="9"
+                                fontFamily="monospace"
+                                fontWeight="bold"
+                                textAnchor="middle"
+                                className="pointer-events-none select-none"
+                              >
+                                {edge.relationType}
+                              </text>
+                            </g>
+                          );
+                        })}
+
+                        {/* DRAW NODES */}
+                        {Array.from(nodePosMap.values()).map(({ x, y, node }) => {
+                          const isSelected = selectedGraphNodeId === node.id;
+                          const isConnectedToSelected = connectedEdges.some(e => e.sourceNodeId === node.id || e.targetNodeId === node.id);
+                          const isDimmed = selectedGraphNodeId && !isSelected && !isConnectedToSelected;
+
+                          let fill = "#6366f1";
+                          if (node.type === "PATENT") fill = "#f59e0b";
+                          if (node.type === "PROJECT" || node.type === "SOLICITATION") fill = "#10b981";
+                          if (node.type === "GRANT") fill = "#0284c7";
+                          if (node.type === "PERMIT") fill = "#f43f5e";
+
+                          return (
+                            <g
+                              key={node.id}
+                              onClick={() => setSelectedGraphNodeId(isSelected ? null : node.id)}
+                              className="cursor-pointer transition-all duration-300 hover:scale-110"
+                              opacity={isDimmed ? 0.25 : 1}
+                            >
+                              {/* Halo Glow Ring on Selection */}
+                              {isSelected && (
+                                <circle cx={x} cy={y} r="24" fill="none" stroke="#f59e0b" strokeWidth="3" className="animate-pulse" />
+                              )}
+
+                              {/* Main Circle Node */}
+                              <circle
+                                cx={x}
+                                cy={y}
+                                r={isSelected ? 18 : 14}
+                                fill={fill}
+                                stroke="#1e293b"
+                                strokeWidth="2.5"
+                              />
+
+                              {/* Node Label Text */}
+                              <text
+                                x={x}
+                                y={y + 28}
+                                fill={isSelected ? "#ffffff" : "#cbd5e1"}
+                                fontSize="10"
+                                fontWeight="bold"
+                                textAnchor="middle"
+                                className="pointer-events-none select-none font-sans"
+                              >
+                                {node.name.length > 20 ? node.name.slice(0, 18) + "..." : node.name}
+                              </text>
+
+                              <text
+                                x={x}
+                                y={y + 39}
+                                fill="#64748b"
+                                fontSize="8"
+                                fontFamily="monospace"
+                                textAnchor="middle"
+                                className="pointer-events-none select-none uppercase"
+                              >
+                                {node.type}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+                    </div>
+
+                    {/* CANVAS FOOTER LEGEND */}
+                    <div className="flex items-center justify-between border-t border-slate-800/80 pt-2 text-[10px] text-slate-400 font-mono">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1">
+                          <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" /> ORG
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> PATENT
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> PROJECT
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-2.5 h-2.5 rounded-full bg-sky-500 inline-block" /> GRANT
+                        </span>
+                      </div>
+                      <span className="text-slate-500">Click any node to inspect relationships</span>
+                    </div>
+
+                  </div>
+
+                  {/* RIGHT SIDE: SELECTED NODE INSPECTOR PANEL (4 cols) */}
+                  {selectedNodeObj && (
+                    <div className="lg:col-span-4 bg-slate-950 p-4 rounded-xl border border-indigo-500/40 flex flex-col justify-between gap-3 animate-fadeIn">
+                      <div>
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                          <div className="flex items-center gap-2">
+                            <Info className="w-4 h-4 text-indigo-400" />
+                            <h4 className="text-xs font-bold text-white uppercase tracking-wider">Node Inspector</h4>
+                          </div>
+                          <button
+                            onClick={() => setSelectedGraphNodeId(null)}
+                            className="text-slate-400 hover:text-white p-1 rounded cursor-pointer"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          <h3 className="text-sm font-bold text-slate-100">{selectedNodeObj.name}</h3>
+                          <div className="flex items-center gap-2 text-[10px] font-mono">
+                            <span className="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 font-bold border border-indigo-500/40">
+                              {selectedNodeObj.type}
+                            </span>
+                            <span className="text-slate-400">{selectedNodeObj.domain}</span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 pt-2 text-[10px] font-mono">
+                            <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                              <span className="text-slate-500 block">Centrality Degree:</span>
+                              <strong className="text-emerald-400 font-bold text-xs">{selectedNodeObj.degree || 4}</strong>
+                            </div>
+                            <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                              <span className="text-slate-500 block">Influence Score:</span>
+                              <strong className="text-amber-400 font-bold text-xs">{selectedNodeObj.score || 88}</strong>
+                            </div>
+                          </div>
+
+                          {/* CONNECTED EDGES LIST */}
+                          <div className="pt-2">
+                            <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-mono">
+                              Active Linked Triples ({connectedEdges.length})
+                            </h5>
+                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                              {connectedEdges.map(edge => {
+                                const isOutgoing = edge.sourceNodeId === selectedNodeObj.id;
+                                const otherNodeId = isOutgoing ? edge.targetNodeId : edge.sourceNodeId;
+                                const otherNode = graphNodes.find(n => n.id === otherNodeId);
+
+                                return (
+                                  <div key={edge.id} className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg text-[10px] space-y-1">
+                                    <div className="flex items-center justify-between font-mono">
+                                      <span className="text-amber-300 font-bold">{isOutgoing ? "→ " + edge.relationType : "← " + edge.relationType}</span>
+                                      <span className="text-emerald-400 font-bold">{Math.round(edge.confidence * 100)}%</span>
+                                    </div>
+                                    <div className="text-slate-200 font-bold">{otherNode?.name || otherNodeId}</div>
+                                    <p className="text-[9px] text-slate-400 italic font-mono truncate">"{edge.evidenceSnippet}"</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handleRunMultiHopTraversal}
+                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Compass className="w-3.5 h-3.5" />
+                        <span>Trace Multi-Hop from this Node</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* VIEW 2: TRIPLES FEED VIEW */}
+            {graphStudioMode === "triples" && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {graphEdges
+                  .filter(e => e.confidence >= graphMinConfidence)
+                  .map((edge) => {
+                    const srcNode = graphNodes.find(n => n.id === edge.sourceNodeId);
+                    const tgtNode = graphNodes.find(n => n.id === edge.targetNodeId);
+
+                    return (
+                      <div key={edge.id} className="p-3.5 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-xl flex flex-col justify-between gap-2.5 transition-all">
+                        <div className="flex items-center justify-between text-[10px] font-mono">
+                          <span className="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 font-extrabold border border-indigo-500/30">
+                            {edge.relationType}
+                          </span>
+                          <span className="text-emerald-400 font-bold">
+                            {(edge.confidence * 100).toFixed(0)}% Conf
+                          </span>
+                        </div>
+
+                        <div className="space-y-1.5 text-xs font-bold text-slate-200">
+                          <div className="flex items-center gap-1 text-indigo-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                            <span>{srcNode?.name || edge.sourceNodeId}</span>
+                          </div>
+                          <div className="text-[10px] font-mono text-slate-500 pl-3">&darr; {edge.relationType}</div>
+                          <div className="flex items-center gap-1 text-emerald-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                            <span>{tgtNode?.name || edge.targetNodeId}</span>
+                          </div>
+                        </div>
+
+                        <p className="text-[10px] text-slate-400 bg-slate-950 p-2 rounded-lg font-mono leading-relaxed border border-slate-800/80">
+                          "{edge.evidenceSnippet}"
+                        </p>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+
+            {/* VIEW 3: ADJACENCY MATRIX VIEW */}
+            {graphStudioMode === "matrix" && (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 overflow-x-auto space-y-3">
+                <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-indigo-400" />
+                  <span>Cross-Domain Adjacency Relationship Matrix</span>
+                </h4>
+
+                <table className="w-full text-[10px] font-mono text-left text-slate-300 border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-950">
+                      <th className="p-2 text-slate-500 font-bold">Source Node \ Target</th>
+                      {graphNodes.slice(0, 6).map(n => (
+                        <th key={n.id} className="p-2 text-indigo-300 font-bold truncate max-w-[100px]">
+                          {n.name.split(" ")[0]}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {graphNodes.slice(0, 6).map(src => (
+                      <tr key={src.id} className="border-b border-slate-800/60 hover:bg-slate-950/50">
+                        <td className="p-2 text-slate-200 font-bold border-r border-slate-800/80 bg-slate-950/40">
+                          {src.name}
+                        </td>
+                        {graphNodes.slice(0, 6).map(tgt => {
+                          const matchingEdge = graphEdges.find(e => e.sourceNodeId === src.id && e.targetNodeId === tgt.id);
+                          return (
+                            <td key={tgt.id} className="p-2 text-center border-r border-slate-800/40">
+                              {matchingEdge ? (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 font-bold border border-emerald-500/30">
+                                  {matchingEdge.relationType} ({Math.round(matchingEdge.confidence * 100)}%)
+                                </span>
+                              ) : (
+                                <span className="text-slate-600">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+          </div>
+
         </div>
       )}
 
