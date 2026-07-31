@@ -1,8 +1,40 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Global Default Deny
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
+    }
+
+    // Knowledge Nodes (Entity Profiles & Graph Nodes)
+    match /knowledge_nodes/{nodeId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Knowledge Edges (Relationship Triples)
+    match /knowledge_edges/{edgeId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Signal Feeds
+    match /signals/{signalId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Enterprise Entity Index
+    match /entities/{entityId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Procurement Opportunities Pipeline
+    match /opportunities/{oppId} {
+      allow read: if true;
+      allow write: if true;
     }
   }
 }
+
