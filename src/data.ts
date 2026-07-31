@@ -353,19 +353,51 @@ export const TIMELINE_TASKS: TimelineTask[] = [
   },
   {
     id: "t8",
-    task: "Context-Aware CRM Task & Workflow Automation (Plain-English briefing push, automated icebreaker generation, and webhook task routing - Lowest Cost, Highest Impact)",
+    task: "Context-Aware CRM Task & Workflow Automation (Plain-English briefing push, automated icebreaker generation, and webhook task routing)",
     phase: "Phase 3: Intelligence & Core AI",
     weeks: [7, 8],
-    status: "Planned",
+    status: "Completed",
     dependencies: ["t5", "t6"]
   },
   {
     id: "t7",
-    task: "Production Deployment on Google Cloud Run & Security Hardening",
+    task: "Production Cloud Run Deployment, Firestore Security Rules & Infrastructure Hardening",
     phase: "Phase 4: Deployment & Scale",
     weeks: [8],
-    status: "Planned",
+    status: "Completed",
     dependencies: ["t6", "t8"]
+  },
+  {
+    id: "t9",
+    task: "Multi-Tenant Enterprise Isolation & SSO Authentication (Firebase Auth / Domain Isolation)",
+    phase: "Phase 5: Commercialization & Distribution",
+    weeks: [9, 10],
+    status: "In Progress",
+    dependencies: ["t7"]
+  },
+  {
+    id: "t10",
+    task: "Tiered Subscription Billing & Usage Metering (Stripe API & Cloud Marketplace Webhook Integration)",
+    phase: "Phase 5: Commercialization & Distribution",
+    weeks: [10, 11],
+    status: "Planned",
+    dependencies: ["t9"]
+  },
+  {
+    id: "t11",
+    task: "Native Desktop Executable Packaging (Tauri / Electron Cross-Platform App with Auto-Updater)",
+    phase: "Phase 5: Commercialization & Distribution",
+    weeks: [11, 12],
+    status: "Planned",
+    dependencies: ["t9", "t10"]
+  },
+  {
+    id: "t12",
+    task: "App Store Publishing & GCP Marketplace SaaS Vendor Certification",
+    phase: "Phase 5: Commercialization & Distribution",
+    weeks: [12],
+    status: "Planned",
+    dependencies: ["t11"]
   }
 ];
 

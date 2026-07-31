@@ -2508,7 +2508,7 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                       Gantt Roadmap & MVP Milestones
                     </h2>
                     <p className="text-xs text-slate-500">
-                      8-week development timeline. Toggle task states to update project readiness.
+                      12-week commercialization timeline. Toggle task states to update project readiness.
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -2557,8 +2557,8 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                         </h4>
                         
                         {/* Weekly indicator boxes */}
-                        <div className="flex gap-1.5 mt-2.5">
-                          {[1, 2, 3, 4, 5, 6, 7, 8].map((w) => {
+                        <div className="flex gap-1 mt-2.5 flex-wrap">
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((w) => {
                             const active = t.weeks.includes(w);
                             return (
                               <span
