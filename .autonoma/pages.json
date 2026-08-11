@@ -1,0 +1,47 @@
+{
+  "frontend\\src\\pages\\Landing.jsx": {
+    "route": "/",
+    "path": "frontend\\src\\pages\\Landing.jsx",
+    "description": "Main landing page of the application."
+  },
+  "frontend\\src\\pages\\Login.jsx": {
+    "route": "/login",
+    "path": "frontend\\src\\pages\\Login.jsx",
+    "description": "Login page for user authentication."
+  },
+  "frontend\\src\\pages\\Signup.jsx": {
+    "route": "/signup",
+    "path": "frontend\\src\\pages\\Signup.jsx",
+    "description": "Signup page for new user registration."
+  },
+  "frontend\\src\\pages\\Dashboard.jsx": {
+    "route": "/app/dashboard",
+    "path": "frontend\\src\\pages\\Dashboard.jsx",
+    "description": "Main dashboard showing an overview of the application status."
+  },
+  "frontend\\src\\pages\\Compose.jsx": {
+    "route": "/app/compose",
+    "path": "frontend\\src\\pages\\Compose.jsx",
+    "description": "Page for creating and composing new social media posts."
+  },
+  "frontend\\src\\pages\\Posts.jsx": {
+    "route": "/app/posts",
+    "path": "frontend\\src\\pages\\Posts.jsx",
+    "description": "View and manage existing posts."
+  },
+  "frontend\\src\\pages\\CalendarPage.jsx": {
+    "route": "/app/calendar",
+    "path": "frontend\\src\\pages\\CalendarPage.jsx",
+    "description": "Calendar view for scheduling and managing posts over time."
+  },
+  "frontend\\src\\pages\\Accounts.jsx": {
+    "route": "/app/accounts",
+    "path": "frontend\\src\\pages\\Accounts.jsx",
+    "description": "Manage connected social media accounts."
+  },
+  "frontend\\src\\pages\\Analytics.jsx": {
+    "route": "/app/analytics",
+    "path": "frontend\\src\\pages\\Analytics.jsx",
+    "description": "Analytics and performance metrics for social media activity."
+  }
+}
