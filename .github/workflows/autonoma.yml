@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Send deployment signal to Autonoma
         env:
-          AUTONOMA_SHARED_SECRET: ${{ secrets.AUTONOMA_SHARED_SECRET }}
+          AUTONOMA_SHARED_SECRET: ${{ secrets.AUTONOMA_MM_SHARED_SECRET }}
           AUTONOMA_ENDPOINT: https://api.autonoma.app/v1/onboarding/deployment-signal
           AUTONOMA_APPLICATION_ID: cms3lqtjk08hz018kmhttz6m5
           PREVIEW_URL: "https://market-marksman.agent-lab.tech"
