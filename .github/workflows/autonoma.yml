@@ -1,0 +1,35 @@
+name: Autonoma Signal
+on:
+  push:
+    branches:
+      - main
+  deployment_status:
+  workflow_dispatch:
+
+jobs:
+  autonoma-deployment-signal:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send deployment signal to Autonoma
+        env:
+          AUTONOMA_SHARED_SECRET: ${{ secrets.AUTONOMA_SHARED_SECRET }}
+          AUTONOMA_ENDPOINT: https://api.autonoma.app/v1/onboarding/deployment-signal
+          AUTONOMA_APPLICATION_ID: cms3lqtjk08hz018kmhttz6m5
+          PREVIEW_URL: "https://market-marksman.agent-lab.tech"
+          PREVIEW_SHA: ${{ github.event.deployment.sha || github.sha }}
+        run: |
+          BODY=$(jq -nc \
+            --arg applicationId "$AUTONOMA_APPLICATION_ID" \
+            --arg previewUrl "$PREVIEW_URL" \
+            --arg sha "$PREVIEW_SHA" \
+            --arg provider "custom" \
+            --arg prNumber "1" \
+            '{applicationId:$applicationId,previewUrl:$previewUrl,provider:$provider} + (if $sha == "" then {} else {sha:$sha} end) + {prNumber: ($prNumber | tonumber)}')
+          
+          SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$AUTONOMA_SHARED_SECRET" -hex | sed 's/^.* //')
+          
+          curl -sS -X POST "$AUTONOMA_ENDPOINT" \
+            -H "content-type: application/json" \
+            -H "x-signature: $SIG" \
+            -d "$BODY"
