@@ -620,7 +620,7 @@ export function EntityExtractionStudio() {
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-white">Entity Extraction (NER) Model Training & Evaluation Studio</h2>
               <span className="px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30">
-                Phase 2: Active
+                Enterprise Model Live
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">

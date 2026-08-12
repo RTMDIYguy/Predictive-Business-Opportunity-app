@@ -23,7 +23,10 @@ import {
   ShieldCheck,
   Layers,
   Database,
-  Search
+  Search,
+  Cloud,
+  Server,
+  Workflow
 } from "lucide-react";
 
 interface BrokerFieldGuideProps {
@@ -31,7 +34,7 @@ interface BrokerFieldGuideProps {
 }
 
 export const BrokerFieldGuide: React.FC<BrokerFieldGuideProps> = () => {
-  const [activeTab, setActiveTab] = useState<"quickstart" | "playbooks" | "ner_guide" | "api_guide" | "crm_guide">("quickstart");
+  const [activeTab, setActiveTab] = useState<"quickstart" | "playbooks" | "pipeline_guide" | "ner_guide" | "api_guide" | "crm_guide">("quickstart");
   const [activeSector, setActiveSector] = useState<"gaming" | "mining" | "defense" | "industrial" | "cre">("gaming");
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
   
@@ -96,6 +99,15 @@ export const BrokerFieldGuide: React.FC<BrokerFieldGuideProps> = () => {
           >
             <Target className="w-3.5 h-3.5" />
             <span>5 Sector Playbooks</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("pipeline_guide")}
+            className={`px-3 py-1.5 font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeTab === "pipeline_guide" ? "bg-amber-600 text-white shadow-md" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Workflow className="w-3.5 h-3.5" />
+            <span>Data Flow Architecture</span>
           </button>
           <button
             onClick={() => setActiveTab("ner_guide")}
@@ -513,6 +525,126 @@ export const BrokerFieldGuide: React.FC<BrokerFieldGuideProps> = () => {
             )}
           </div>
 
+        </div>
+      )}
+
+      {/* TAB: DATA FLOW & PIPELINE ARCHITECTURE */}
+      {activeTab === "pipeline_guide" && (
+        <div className="space-y-6 font-sans text-xs">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2 font-mono">
+                <Workflow className="w-4 h-4 text-amber-400" />
+                <span>Full-Scale Data Flow & Pipeline Architecture</span>
+              </h3>
+              <p className="text-slate-300 text-xs mt-1 leading-relaxed">
+                Understand how alternative data flows from open sources, scrapers, and state agency registers through serverless enrichment, BigQuery warehousing, Gemini AI synthesis, and live client dashboards.
+              </p>
+            </div>
+
+            {/* Pipeline Flowchart Visualizer */}
+            <div className="border border-slate-800 bg-slate-950 rounded-xl p-6 flex flex-col items-center justify-center gap-6 relative overflow-hidden">
+              <div className="grid grid-cols-1 md:grid-cols-5 items-center w-full relative z-10 gap-4">
+                
+                {/* Stage 1: Sources */}
+                <div className="flex flex-col items-center p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-center">
+                  <div className="w-9 h-9 rounded-lg bg-indigo-950 border border-indigo-500/40 flex items-center justify-center text-indigo-400 mb-2">
+                    <Cloud className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-xs font-bold text-white font-mono">1. Raw Data Sources</h4>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                    USPTO Patents, FDA trials, SEC EDGAR RSS, LinkedIn listings, Nevada State Agencies
+                  </p>
+                </div>
+
+                {/* Arrow */}
+                <div className="flex justify-center">
+                  <ArrowRight className="w-4 h-4 text-amber-500 rotate-90 md:rotate-0" />
+                </div>
+
+                {/* Stage 2: Processing Scrapers */}
+                <div className="flex flex-col items-center p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-center">
+                  <div className="w-9 h-9 rounded-lg bg-emerald-950 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mb-2">
+                    <Server className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-xs font-bold text-white font-mono">2. Ingestion Engine</h4>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                    Cloud Scheduler triggers + serverless Cloud Run container crawlers
+                  </p>
+                </div>
+
+                {/* Arrow */}
+                <div className="flex justify-center">
+                  <ArrowRight className="w-4 h-4 text-amber-500 rotate-90 md:rotate-0" />
+                </div>
+
+                {/* Stage 3: Warehouse & NLP */}
+                <div className="flex flex-col items-center p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-center">
+                  <div className="w-9 h-9 rounded-lg bg-amber-950 border border-amber-500/40 flex items-center justify-center text-amber-400 mb-2">
+                    <Database className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-xs font-bold text-white font-mono">3. Entity Linkage & Graph</h4>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                    BigQuery data warehouse & canonical entity disambiguation
+                  </p>
+                </div>
+
+                {/* Arrow */}
+                <div className="flex justify-center">
+                  <ArrowRight className="w-4 h-4 text-amber-500 rotate-90 md:rotate-0" />
+                </div>
+
+                {/* Stage 4: Synthesis LLM */}
+                <div className="flex flex-col items-center p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-center">
+                  <div className="w-9 h-9 rounded-lg bg-purple-950 border border-purple-500/40 flex items-center justify-center text-purple-400 mb-2">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-xs font-bold text-white font-mono">4. Gemini AI Engine</h4>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                    Prompt synthesis, conviction scoring, unannounced deal predictions
+                  </p>
+                </div>
+
+                {/* Arrow */}
+                <div className="flex justify-center">
+                  <ArrowRight className="w-4 h-4 text-amber-500 rotate-90 md:rotate-0" />
+                </div>
+
+                {/* Stage 5: Front UI */}
+                <div className="flex flex-col items-center p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-center">
+                  <div className="w-9 h-9 rounded-lg bg-amber-600 flex items-center justify-center text-white mb-2">
+                    <Layers className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-xs font-bold text-white font-mono">5. Client Dashboards</h4>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                    React Web UI + real-time Firestore sync & webhook triggers
+                  </p>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Architecture Explanatory Details */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                <h4 className="text-xs font-bold text-amber-400 font-mono uppercase tracking-wider">
+                  Entity Linkage & Disambiguation Pipelines
+                </h4>
+                <p className="text-slate-300 leading-relaxed text-xs">
+                  In a complete live app, unstructured text files (XML patents, RSS company filings) pass through a <strong>Named Entity Recognition (NER)</strong> model to link patents, job listings, and VC flows back to a unique corporate identifier (LEI, CIK, or Crunchbase UUID). This linkage eliminates duplicates and matches disparate indicators into a single high-strength prediction candidate.
+                </p>
+              </div>
+
+              <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                <h4 className="text-xs font-bold text-amber-400 font-mono uppercase tracking-wider">
+                  Cloud Security & Isolation
+                </h4>
+                <p className="text-slate-300 leading-relaxed text-xs">
+                  API keys for proprietary sources and Google Cloud IAM Service Account keys authenticate using GCP <strong>Secret Manager</strong>. Serverless Google Cloud Run containers run strictly on-demand, isolating security scopes and ensuring operational compute scales linearly with data ingested.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

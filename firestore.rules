@@ -35,6 +35,35 @@ service cloud.firestore {
       allow read: if true;
       allow write: if true;
     }
+
+    // Commercial Multi-Tenant Accounts & SSO
+    match /tenants/{tenantId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Licenses & Key Signatures
+    match /licenses/{licenseId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Subscriptions & Metering
+    match /billing_subscriptions/{subId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /usage_logs/{logId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Desktop App Configs
+    match /desktop_builds/{buildId} {
+      allow read: if true;
+      allow write: if true;
+    }
   }
 }
 

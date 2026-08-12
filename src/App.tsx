@@ -64,10 +64,13 @@ import { EntityExtractionStudio } from "./components/EntityExtractionStudio";
 import { ApiDeveloperStudio } from "./components/ApiDeveloperStudio";
 import { CrmWorkflowStudio } from "./components/CrmWorkflowStudio";
 import { BrokerFieldGuide } from "./components/BrokerFieldGuide";
+import { CommercializationStudio } from "./components/CommercializationStudio";
+import { AboutStudio } from "./components/AboutStudio";
+import { AgentLabLogo, UncleRobertLogo } from "./components/CompanyLogos";
 
 export default function App() {
   // Navigation / Tabs
-  const [activeTab, setActiveTab] = useState<"sandbox" | "buildplan" | "architecture" | "nerstudio" | "apistudio" | "crmstudio" | "fieldguide">("sandbox");
+  const [activeTab, setActiveTab] = useState<"fieldguide" | "sandbox" | "nerstudio" | "apistudio" | "crmstudio" | "commercialization" | "about">("fieldguide");
 
   // Sector Selection State
   const [selectedSector, setSelectedSector] = useState<Sector>(SECTORS[0]);
@@ -684,12 +687,12 @@ export default function App() {
           {
             action: enableComparison && comparisonSector ? "Establish Cross-Sector Watchlist Alert" : "Establish Watchlist Alert",
             rationale: enableComparison && comparisonSector ? `Setup scrapers monitoring patent cross-citations between ${selectedSector.name} and ${comparisonSector.name}.` : "Setup automatic scrapers for supplementary FDA clinical trials registries or customs bills of lading matching terms.",
-            phase: "Phase 1: Validation"
+            phase: "Validation"
           },
           {
             action: "Position Capital Hedge",
             rationale: "Align tactical asset allocation options positioning towards target acquisition companies before bulk PR announcements.",
-            phase: "Phase 2: Positioning"
+            phase: "Positioning"
           }
         ]
       };
@@ -745,6 +748,12 @@ export default function App() {
   };
 
   // Reset timeline tasks to default
+  const markTaskCompleted = (id: string) => {
+    setTimelineTasks(prev =>
+      prev.map(t => (t.id === id ? { ...t, status: "Completed" } : t))
+    );
+  };
+
   const resetTimeline = () => {
     setTimelineTasks(TIMELINE_TASKS);
   };
@@ -1064,10 +1073,10 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-900 tracking-tight" id="app_title">
-                Predictive Opportunity Intelligence
+                Market Marksman
               </h1>
               <p className="text-xs text-slate-500 font-medium" id="app_subtitle">
-                Alternative Data Signal Mining & Live Build Plan Workspace
+                Alternative Data Signal Mining & Predictive Intelligence Suite
               </p>
             </div>
           </div>
@@ -1094,89 +1103,102 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
             </button>
 
             <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200" id="nav_tabs_container">
+              {/* 1. Field Guide & Playbook */}
+              <button
+                onClick={() => setActiveTab("fieldguide")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  activeTab === "fieldguide"
+                    ? "bg-amber-950 text-amber-200 shadow-xs border border-amber-600 font-bold"
+                    : "text-amber-800 hover:text-amber-950 bg-amber-50/60 hover:bg-amber-100/80 border border-amber-200/60"
+                }`}
+                id="tab_fieldguide"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-amber-600" />
+                <span>Field Guide & Playbook</span>
+              </button>
+
+              {/* 2. Signal Sandbox */}
               <button
                 onClick={() => setActiveTab("sandbox")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === "sandbox"
                     ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
                 id="tab_sandbox"
               >
-                <Activity className="w-4 h-4" />
-                Signal Sandbox
+                <Activity className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Signal Sandbox</span>
               </button>
-              <button
-                onClick={() => setActiveTab("buildplan")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  activeTab === "buildplan"
-                    ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-                id="tab_buildplan"
-              >
-                <ListTodo className="w-4 h-4" />
-                Live Build Plan
-              </button>
+
+              {/* 3. Entity Extraction (NER) */}
               <button
                 onClick={() => setActiveTab("nerstudio")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === "nerstudio"
                     ? "bg-white text-indigo-900 shadow-xs border border-purple-200"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
                 id="tab_nerstudio"
               >
-                <BrainCircuit className="w-4 h-4 text-purple-600" />
-                Entity Extraction (NER)
+                <BrainCircuit className="w-3.5 h-3.5 text-purple-600" />
+                <span>Entity Extraction (NER)</span>
               </button>
-              <button
-                onClick={() => setActiveTab("architecture")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  activeTab === "architecture"
-                    ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-                id="tab_architecture"
-              >
-                <Workflow className="w-4 h-4" />
-                Pipeline Architecture
-              </button>
+
+              {/* 4. API Studio */}
               <button
                 onClick={() => setActiveTab("apistudio")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === "apistudio"
                     ? "bg-indigo-900 text-white shadow-xs border border-indigo-700 font-bold"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
                 id="tab_apistudio"
               >
-                <Code className="w-4 h-4 text-indigo-500" />
-                API Studio
+                <Code className="w-3.5 h-3.5 text-indigo-500" />
+                <span>API Studio</span>
               </button>
+
+              {/* 5. CRM & Workflows */}
               <button
                 onClick={() => setActiveTab("crmstudio")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === "crmstudio"
                     ? "bg-indigo-900 text-white shadow-xs border border-indigo-700 font-bold"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
                 id="tab_crmstudio"
               >
-                <Zap className="w-4 h-4 text-amber-500" />
-                CRM & Workflows
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                <span>CRM & Workflows</span>
               </button>
+
+              {/* 6. Commercial Hub */}
               <button
-                onClick={() => setActiveTab("fieldguide")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  activeTab === "fieldguide"
-                    ? "bg-amber-950 text-amber-200 shadow-xs border border-amber-600 font-bold"
-                    : "text-amber-700 hover:text-amber-900 bg-amber-50/60 hover:bg-amber-100/80 border border-amber-200/60"
+                onClick={() => setActiveTab("commercialization")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  activeTab === "commercialization"
+                    ? "bg-emerald-950 text-emerald-200 shadow-xs border border-emerald-600 font-bold"
+                    : "text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100/90 border border-emerald-200"
                 }`}
-                id="tab_fieldguide"
+                id="tab_commercialization"
               >
-                <BookOpen className="w-4 h-4 text-amber-600" />
-                <span>Field Guide & Playbook</span>
+                <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Commercial Hub</span>
+              </button>
+
+              {/* 7. About Page */}
+              <button
+                onClick={() => setActiveTab("about")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  activeTab === "about"
+                    ? "bg-slate-900 text-white shadow-xs border border-slate-700 font-bold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                id="tab_about"
+              >
+                <Info className="w-3.5 h-3.5 text-indigo-400" />
+                <span>About</span>
               </button>
             </div>
           </div>
@@ -1356,10 +1378,10 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
                 <div className="mt-4 pt-3.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
                   <span>Source: SEC / USPTO / WIPO Research</span>
                   <button 
-                    onClick={() => setActiveTab("buildplan")}
-                    className="text-indigo-400 hover:text-white font-medium flex items-center gap-0.5"
+                    onClick={() => setActiveTab("fieldguide")}
+                    className="text-amber-400 hover:text-white font-medium flex items-center gap-0.5 cursor-pointer"
                   >
-                    Build Plan <ArrowRight className="w-3 h-3" />
+                    Field Guide <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>
               </div>
@@ -2844,164 +2866,91 @@ ${analysisResult.criticalRisks.map((risk) => `- ${risk}`).join('\n')}
           </div>
         )}
 
-        {/* TAB 3: PIPELINE ARCHITECTURE */}
-        {activeTab === "architecture" && (
-          <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs flex flex-col gap-6" id="architecture_workspace">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                Data Pipeline Flow Architecture
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Full-scale serverless flow mapped on Google Cloud, keeping compute and orchestration scales fully isolated and secure.
-              </p>
-            </div>
 
-            {/* Pipeline Flowchart Visualizer */}
-            <div className="border border-slate-200 bg-slate-50 rounded-xl p-8 flex flex-col items-center justify-center gap-8 shadow-2xs relative overflow-hidden" id="flowchart_visualizer">
-              
-              {/* Outer grid pattern decorative background */}
-              <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[radial-gradient(#4f46e5_1px,transparent_1px)] [background-size:16px_16px]" />
 
-              <div className="grid grid-cols-1 md:grid-cols-5 items-center w-full max-w-4xl relative z-10 gap-6 md:gap-4" id="pipeline_flow_row">
-                
-                {/* Stage 1: Sources */}
-                <div className="flex flex-col items-center p-4 bg-white border border-slate-200 rounded-xl shadow-3xs text-center" id="arch_stage_1">
-                  <div className="w-10 h-10 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 mb-2">
-                    <Cloud className="w-5 h-5" />
-                  </div>
-                  <h4 className="text-xs font-bold text-slate-800">Alternative Sources</h4>
-                  <p className="text-[10px] text-slate-500 mt-1 leading-normal">
-                    USPTO Patents, FDA trials, SEC EDGAR RSS, LinkedIn listings
-                  </p>
-                </div>
-
-                {/* Arrow */}
-                <div className="flex justify-center" id="arch_arrow_1">
-                  <ArrowRight className="w-5 h-5 text-indigo-400 rotate-90 md:rotate-0" />
-                </div>
-
-                {/* Stage 2: Processing Scrapers */}
-                <div className="flex flex-col items-center p-4 bg-white border border-slate-200 rounded-xl shadow-3xs text-center" id="arch_stage_2">
-                  <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 mb-2">
-                    <Server className="w-5 h-5" />
-                  </div>
-                  <h4 className="text-xs font-bold text-slate-800">Ingestion Ingest</h4>
-                  <p className="text-[10px] text-slate-500 mt-1 leading-normal">
-                    Cloud Scheduler trigger + Cloud Run containers (Py/Node)
-                  </p>
-                </div>
-
-                {/* Arrow */}
-                <div className="flex justify-center" id="arch_arrow_2">
-                  <ArrowRight className="w-5 h-5 text-indigo-400 rotate-90 md:rotate-0" />
-                </div>
-
-                {/* Stage 3: Warehouse & NLP */}
-                <div className="flex flex-col items-center p-4 bg-white border border-slate-200 rounded-xl shadow-3xs text-center" id="arch_stage_3">
-                  <div className="w-10 h-10 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-500 mb-2">
-                    <Database className="w-5 h-5" />
-                  </div>
-                  <h4 className="text-xs font-bold text-slate-800">BigQuery Storage</h4>
-                  <p className="text-[10px] text-slate-500 mt-1 leading-normal">
-                    Historical signal dumps & entity linkage knowledge graphs
-                  </p>
-                </div>
-
-                {/* Arrow */}
-                <div className="flex justify-center" id="arch_arrow_3">
-                  <ArrowRight className="w-5 h-5 text-indigo-400 rotate-90 md:rotate-0" />
-                </div>
-
-                {/* Stage 4: Synthesis LLM */}
-                <div className="flex flex-col items-center p-4 bg-white border border-slate-200 rounded-xl shadow-3xs text-center" id="arch_stage_4">
-                  <div className="w-10 h-10 rounded-lg bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600 mb-2">
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                  <h4 className="text-xs font-bold text-slate-800">Vertex / Gemini AI</h4>
-                  <p className="text-[10px] text-slate-500 mt-1 leading-normal">
-                    Dynamic prompt synthesis, risk rating, unannounced prediction
-                  </p>
-                </div>
-
-                {/* Arrow */}
-                <div className="flex justify-center" id="arch_arrow_4">
-                  <ArrowRight className="w-5 h-5 text-indigo-400 rotate-90 md:rotate-0" />
-                </div>
-
-                {/* Stage 5: Front UI */}
-                <div className="flex flex-col items-center p-4 bg-white border border-slate-200 rounded-xl shadow-3xs text-center" id="arch_stage_5">
-                  <div className="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center text-white mb-2">
-                    <Layers className="w-5 h-5" />
-                  </div>
-                  <h4 className="text-xs font-bold text-slate-800">User Interface</h4>
-                  <p className="text-[10px] text-slate-500 mt-1 leading-normal">
-                    React Web Dashboard + real-time Firestore triggers & Alerts
-                  </p>
-                </div>
-
-              </div>
-            </div>
-
-            {/* Architecture Explanatory Details */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6" id="architecture_details">
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl" id="arch_data_enrichment_info">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
-                  Entity Linkage & NER Ingest Pipelines
-                </h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  In a complete live app, the unstructured text files (XML patents, RSS company filings) must first pass through a <strong>Named Entity Recognition (NER)</strong> model or regular expressions to link patents, job listings, and VC flows back to a unique, consolidated corporate identifier (LEI, CIK, or Crunchbase UUID).
-                  <br /><br />
-                  This linkage is what eliminates duplicates and allows the system to aggregate disparate indicators—such as matching a patent assignment with a sudden job opening—into a single high-strength prediction candidate.
-                </p>
-              </div>
-
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl" id="arch_scalability_info">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
-                  Cloud Security & API Credentials
-                </h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Your API keys for proprietary sources and Google Cloud IAM Service Account keys must never sit on the client browser. All scrapers and entity linkage modules authenticate using GCP <strong>Secret Manager</strong>.
-                  <br /><br />
-                  By utilizing serverless Google Cloud Run, individual scrapers run strictly on-demand (spinning down to absolute zero once complete). This isolates security scopes and guarantees that your operational costs scale linearly with the amount of data you ingest, rather than paying for constant idling compute servers.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: ENTITY EXTRACTION (NER) MODEL TRAINING STUDIO */}
+        {/* TAB 3: ENTITY EXTRACTION (NER) MODEL TRAINING STUDIO */}
         {activeTab === "nerstudio" && (
           <EntityExtractionStudio />
         )}
 
-        {/* TAB 5: BACKEND REST & GRAPHQL API DEVELOPER STUDIO */}
+        {/* TAB 4: BACKEND REST & GRAPHQL API DEVELOPER STUDIO */}
         {activeTab === "apistudio" && (
           <ApiDeveloperStudio />
         )}
 
-        {/* TAB 6: CONTEXT-AWARE CRM TASK & WORKFLOW AUTOMATION STUDIO */}
+        {/* TAB 5: CONTEXT-AWARE CRM TASK & WORKFLOW AUTOMATION STUDIO */}
         {activeTab === "crmstudio" && (
           <CrmWorkflowStudio />
         )}
 
-        {/* TAB 7: NEVADA BROKER FIELD GUIDE & TACTICAL PLAYBOOK */}
+        {/* TAB 1: NEVADA BROKER FIELD GUIDE & TACTICAL PLAYBOOK */}
         {activeTab === "fieldguide" && (
           <BrokerFieldGuide />
+        )}
+
+        {/* TAB 6: COMMERCIALIZATION & DISTRIBUTION HUB */}
+        {activeTab === "commercialization" && (
+          <CommercializationStudio onTaskCompleted={markTaskCompleted} />
+        )}
+
+        {/* TAB 7: ABOUT PAGE */}
+        {activeTab === "about" && (
+          <AboutStudio />
         )}
       </main>
 
       {/* FOOTER */}
-      <footer className="border-t border-slate-200 bg-white mt-12 py-6 text-center text-xs text-slate-400" id="app_footer">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <span>
-            © 2026 Predictive Opportunity Intelligence Dashboard. Crafted for alternative venture research.
-          </span>
-          <div className="flex gap-4">
-            <button onClick={() => setActiveTab("sandbox")} className="hover:text-slate-600">Sandbox</button>
-            <button onClick={() => setActiveTab("nerstudio")} className="hover:text-slate-600">NER Studio</button>
-            <button onClick={() => setActiveTab("buildplan")} className="hover:text-slate-600">Build Plan</button>
-            <button onClick={() => setActiveTab("architecture")} className="hover:text-slate-600">Architecture</button>
+      <footer className="border-t border-slate-200 bg-white mt-12 py-6 text-xs text-slate-500" id="app_footer">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-4">
+          
+          {/* Left: Copyright */}
+          <div className="flex flex-col gap-1 text-center md:text-left">
+            <span className="font-semibold text-slate-800">
+              © 2026 Agent Lab: an Uncle Robert Consulting LLC company.
+            </span>
+            <span className="text-[11px] text-slate-400">
+              Market Marksman — Alternative Data & Commercial Deal Intelligence Suite
+            </span>
           </div>
+
+          {/* Middle: Brand Logos */}
+          <div className="flex items-center gap-3 my-1 md:my-0">
+            <AgentLabLogo height={28} />
+            <UncleRobertLogo height={28} />
+          </div>
+
+          {/* Right: Field Guide / Navigation Links & Legal Links */}
+          <div className="flex flex-col items-center md:items-end gap-1.5">
+            <div className="flex flex-wrap justify-center md:justify-end gap-3 font-medium">
+              <button onClick={() => setActiveTab("fieldguide")} className="hover:text-indigo-600 transition-colors cursor-pointer">Field Guide</button>
+              <button onClick={() => setActiveTab("sandbox")} className="hover:text-indigo-600 transition-colors cursor-pointer">Signal Sandbox</button>
+              <button onClick={() => setActiveTab("nerstudio")} className="hover:text-indigo-600 transition-colors cursor-pointer">NER Studio</button>
+              <button onClick={() => setActiveTab("apistudio")} className="hover:text-indigo-600 transition-colors cursor-pointer">API Studio</button>
+              <button onClick={() => setActiveTab("crmstudio")} className="hover:text-indigo-600 transition-colors cursor-pointer">CRM & Workflows</button>
+              <button onClick={() => setActiveTab("commercialization")} className="hover:text-indigo-600 transition-colors cursor-pointer">Commercial Hub</button>
+              <button onClick={() => setActiveTab("about")} className="hover:text-indigo-600 transition-colors cursor-pointer">About</button>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-slate-400">
+              <a
+                href="https://docs.google.com/document/d/1nWLkmXwj3AbQnUq7V1rewdJBProbH_cx"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-indigo-600 underline transition-colors"
+              >
+                Terms & Conditions
+              </a>
+              <span>•</span>
+              <a
+                href="https://docs.google.com/document/d/1Gx-5840Q_o2OA1lwdPM6c4-mUY20bMmN"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-indigo-600 underline transition-colors"
+              >
+                Privacy Policy
+              </a>
+            </div>
+          </div>
+
         </div>
       </footer>
 
